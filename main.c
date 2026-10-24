@@ -898,7 +898,7 @@ static BOOL type_content_to_chat(HWND target, const wchar_t *text) {
             return 0;
         }
         append_log(L"[진행] 이미지를 채팅 입력칸에 붙여넣었습니다.\r\n");
-        Sleep(500);
+        Sleep(1000);
         if (!click_image_send_overlay(target)) {
             append_log(L"[실패] 클립보드 이미지 전송 오버레이의 전송 영역을 누르지 못했습니다.\r\n");
             return 0;
