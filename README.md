@@ -1,6 +1,6 @@
 # 카카오톡 대화창 MVP — Codex 개발 인수인계 (기준선: v5)
 
-> **현재 구현 버전: v17 (기준선 v5), 배포 버전: v1.10.** v6의 오픈채팅 전용 필터는 실제 환경에서 대화방이 전혀 표시되지 않아 **폐기**했습니다. v17은 이미지 붙여넣기 후 나타나는 대상 대화방 소유 팝업을 검증하고 그 하단의 **전송** 영역을 누르는 버전입니다.
+> **현재 구현 버전: v18 (기준선 v5), 배포 버전: v1.11.** v6의 오픈채팅 전용 필터는 실제 환경에서 대화방이 전혀 표시되지 않아 **폐기**했습니다. v18은 추가 리소스 없이 기존 Win32 UI를 현대적인 밝은 스타일로 정리한 버전입니다.
 >
 > 이 문서는 기존 구현을 유지하면서 **Windows + Visual Studio Code + Codex**에서 개발을 계속하기 위한 설명서입니다. 새 기능을 선제적으로 추가하라는 요청이 아닙니다.
 
@@ -49,6 +49,7 @@
    - 포커스 이동과 지정 키 입력의 성공·실패
    - 목록 입력 시작, 방별 진행·성공·실패, 1500ms 대기 및 전체 완료
    - 이미지와 메시지가 모두 없거나 선택된 방이 없을 때의 중단 사유
+10. UI는 외부 이미지·아이콘·테마 파일 없이 Segoe UI 글꼴, 밝은 중성 배경, 굵은 구획 제목, 둥근 평면 버튼과 주요 작업의 파란색 강조를 사용함.
 
 **중요:** 고정 키 시퀀스의 `Enter`와 이미지 확인창의 **전송** 버튼 클릭은 실제 동작이므로 메시지·이미지가 전송될 수 있음. **본인 소유 테스트 대화방에서만 먼저 검증**할 것.
 
@@ -72,7 +73,8 @@
 | v14 | 이미지 확인창의 전송 버튼을 별도 HWND에서 찾아 클릭하고 이미지 전송용 Enter 제거 | v15에서 실제 오버레이 구조에 맞게 교체 |
 | v15 | 대화창 내부 이미지 확인 오버레이의 전송 영역을 상대 좌표로 클릭하고 커서 위치 복원 | v16에 계승 |
 | v16 | 이미지 붙여넣기 후 전송 영역 클릭까지의 대기를 500ms에서 1000ms로 변경 | v17에 계승 |
-| **v17** | **비활성화된 대상 방이 소유한 전경 이미지 전송 팝업을 검증하고 팝업 하단 전송 영역 클릭** | **현재 구현 버전** |
+| v17 | 비활성화된 대상 방이 소유한 전경 이미지 전송 팝업을 검증하고 팝업 하단 전송 영역 클릭 | v18에 계승 |
+| **v18** | **외부 리소스 없이 Segoe UI·밝은 배경·둥근 평면 버튼을 적용해 기존 UI 현대화** | **현재 구현 버전** |
 
 **롤백 결정:** 오픈채팅 여부를 신뢰성 있게 판별하는 카카오톡 전용 API/속성을 확보하지 못한 채 필터를 적용한 것이 문제였습니다. 현재 프로젝트에는 v6 필터를 포함하지 않았습니다. 오픈채팅 판별을 재추진하려면 카카오톡 실제 설치 버전에서 일반 채팅과 오픈채팅의 창/UI 구조를 비교하는 **실측 근거**가 먼저 필요합니다.
 
@@ -235,10 +237,23 @@
 - 실제 카카오톡 팝업의 전송 성공 여부는 **미검증**.
 - 코드 서명은 적용하지 않음.
 
+### 2026-10-25 v18 / 배포 v1.11 변경 및 빌드 기록
+
+- 기존 컨트롤과 기능을 유지하면서 Windows 기본 `Segoe UI` 글꼴과 굵은 구획 제목을 적용하고, 메인 배경을 밝은 중성색으로 정리함.
+- 7개 작업 버튼을 외부 이미지 없이 Win32 owner-draw 방식의 둥근 평면 버튼으로 변경함. **[선택 →]**과 **[목록에 내용 입력]**은 파란색 주요 작업으로 강조하고 나머지는 밝은 보조 색상으로 표시함.
+- 목록·메시지 입력·로그·이미지 미리보기는 흰색 표면으로 구분하고 목록에 테두리를 추가함. 기존 버튼 문구, 컨트롤 수, 창 배치, 입력·전송 순서와 대기 시간은 변경하지 않음.
+- LLVM 23.1.4 `clang-cl` 호환 모드 + `lld-link`로 `KakoMVP-v1.11.exe` Windows x64 standalone 빌드 성공.
+- PE 검사 결과 `IMAGE_FILE_MACHINE_AMD64`, Windows GUI이며 import DLL은 기존과 동일한 `KERNEL32.dll`, `USER32.dll`, `GDI32.dll`뿐임.
+- UI 검증: Button 8개 중 그룹 박스를 제외한 작업 버튼 7개가 owner-draw 스타일이며 Edit 2개, ListBox 2개, Static 5개, 이미지 미리보기 1개가 유지됨을 확인함. 실제 화면 캡처로 글꼴, 배경, 버튼 강조, 흰색 로그 표면 표시를 확인함.
+- 회귀 검증: 검색 목록의 항목을 선택 목록으로 이동하고 다시 제외했을 때 원래 항목 수로 복원되는 것을 확인함.
+- 실행 파일 SHA-256: `236046aaa8831d796572a5e5af6839ccafe59f4397fce84b48d250ab293b8e73`
+- 실제 카카오톡 이미지 전송은 이번 UI 변경에서 별도로 실행하지 않았으며 기존과 같이 **미검증**.
+- 코드 서명은 적용하지 않음.
+
 ### 배포 실행 파일 버전 규칙
 
-- 현재 배포 파일: `KakoMVP-v1.10.exe`
-- 구현 이력 버전(v17)과 사용자 배포 파일 버전(v1.10)은 별도로 관리함.
+- 현재 배포 파일: `KakoMVP-v1.11.exe`
+- 구현 이력 버전(v18)과 사용자 배포 파일 버전(v1.11)은 별도로 관리함.
 - 수정점이 발생하는 각 작업마다 배포 버전을 올리고 `KakoMVP-v<배포 버전>.exe` 형식의 실행 파일과 SHA-256을 README에 기록함.
 
 ### Git 버전 관리
@@ -252,19 +267,20 @@
 ```text
 KakaoMVP_v5_Codex/
 ├── .gitattributes # C/Markdown LF 및 EXE 바이너리 취급 고정
-├── main.c       # v5 기준선에 승인된 v17 기능을 반영한 C 소스
+├── main.c       # v5 기준선에 승인된 v18 기능을 반영한 C 소스
 ├── KakoMVP-v1.4.exe # v11 Windows x64 standalone 실행 파일(이전 배포)
 ├── KakoMVP-v1.5.exe # v12 Windows x64 standalone 실행 파일(이전 배포)
 ├── KakoMVP-v1.6.exe # v13 Windows x64 standalone 실행 파일(이전 배포)
 ├── KakoMVP-v1.7.exe # v14 Windows x64 standalone 실행 파일(이전 배포)
 ├── KakoMVP-v1.8.exe # v15 Windows x64 standalone 실행 파일(이전 배포)
 ├── KakoMVP-v1.9.exe # v16 Windows x64 standalone 실행 파일(이전 배포)
-├── KakoMVP-v1.10.exe # v17 Windows x64 standalone 실행 파일(배포 v1.10)
+├── KakoMVP-v1.10.exe # v17 Windows x64 standalone 실행 파일(이전 배포)
+├── KakoMVP-v1.11.exe # v18 Windows x64 standalone 실행 파일(배포 v1.11)
 ├── README.md    # 구현 이력, 빌드·검증·제약사항
 └── AGENTS.md    # Codex가 자동으로 읽을 수 있는 개발 규칙
 ```
 
-이 폴더는 소스 중심 작업 폴더이며, 이전 배포 파일과 현재 `KakoMVP-v1.10.exe`를 함께 포함합니다.
+이 폴더는 소스 중심 작업 폴더이며, 이전 배포 파일과 현재 `KakoMVP-v1.11.exe`를 함께 포함합니다.
 
 ## 5. 현재 소스 구조 (`main.c`)
 
@@ -298,6 +314,12 @@ KakaoMVP_v5_Codex/
 - `send_paste()`: `SendInput()`으로 실제 `Ctrl+V` 키다운·키업을 전송하고 실패 시 Ctrl 키를 해제.
 - `click_image_send_overlay()`: 대상 방이 소유한 같은 프로세스의 전경 이미지 전송 팝업을 검증하고 팝업 가로 중앙·하단 25px의 **전송** 영역을 실제 왼쪽 마우스 입력으로 클릭한 뒤 사용자 커서를 복원. 별도 팝업이 없는 기존 화면에서는 대상 방 가로 중앙·전체 높이 78%를 사용.
 
+### 화면 스타일
+
+- `app_font`/`section_font`: Windows 기본 Segoe UI를 일반 본문과 굵은 구획 제목에 적용하며 별도 글꼴 파일을 포함하지 않음.
+- `draw_modern_button()`: Win32 owner-draw로 둥근 평면 버튼, 눌림·비활성·키보드 포커스 상태와 주요 작업의 파란색 강조를 그림.
+- `WM_ERASEBKGND`와 `WM_CTLCOLOR*`: 밝은 중성 배경과 흰색 목록·입력·로그 표면을 표시함.
+
 ### 키 시퀀스
 
 - `send_character(wchar_t)`: 유니코드 문자의 키다운/키업을 `SendInput()`으로 전송.
@@ -319,7 +341,7 @@ KakaoMVP_v5_Codex/
 ### MSVC 빌드 명령 예시 (Windows x64)
 
 ```bat
-cl /nologo /O2 /GS- /Zl /utf-8 /TC main.c /link /SUBSYSTEM:WINDOWS /ENTRY:app_entry /NODEFAULTLIB /OUT:KakoMVP-v1.10.exe kernel32.lib user32.lib gdi32.lib
+cl /nologo /O2 /GS- /Zl /utf-8 /TC main.c /link /SUBSYSTEM:WINDOWS /ENTRY:app_entry /NODEFAULTLIB /OUT:KakoMVP-v1.11.exe kernel32.lib user32.lib gdi32.lib
 ```
 
 - `cl`: Microsoft C/C++ 컴파일러. `where cl`로 사용 가능 여부 확인.
@@ -374,6 +396,7 @@ cl /nologo /O2 /GS- /Zl /utf-8 /TC main.c /link /SUBSYSTEM:WINDOWS /ENTRY:app_en
 - **순회 중단:** 선택 목록의 한 방이라도 닫혔거나 포커스 획득에 실패하면 이후 방은 입력하지 않고 중단 사유를 진행 로그에 기록함.
 - **입력 길이:** 단일 행 최대 4,095자.
 - **로그 보존 범위:** 진행 로그는 현재 실행 중에만 화면에 누적되며 파일로 저장하지 않음.
+- **고정 밝은 테마:** v1.11의 현대화 색상은 추가 테마 리소스 없이 그리는 고정 밝은 테마이며 Windows 다크 모드에 자동 전환되지 않음.
 - **한 번만 목록 수집:** 새 방을 열면 EXE 재실행 필요.
 - **코드 서명 없음:** Windows 보안 경고는 발생할 수 있음.
 
@@ -395,5 +418,5 @@ cl /nologo /O2 /GS- /Zl /utf-8 /TC main.c /link /SUBSYSTEM:WINDOWS /ENTRY:app_en
 - 기준선 `main.c`: **v5 롤백 ZIP 내부 원본과 바이트 단위 동일한 파일**
 - 원본 SHA-256: `ffb628b6c0cebc398baaecd63efe8355b20a53bd24465cd1315bc067f40cf273`
 - 기존 v5 EXE SHA-256: `7a74da6d2cc680f26eab8f2a20fadbe564c821534be01f8c08b4dccb4d806ce8`
-- 현재 `KakoMVP-v1.10.exe` SHA-256: `4d1b7aeb36f7d75cddf1371b1b961bdaeaac3f4c1699df051a769a65bc76aa8f`
+- 현재 `KakoMVP-v1.11.exe` SHA-256: `236046aaa8831d796572a5e5af6839ccafe59f4397fce84b48d250ab293b8e73`
 - 작업 시점: 2026-10-25

@@ -19,6 +19,7 @@ typedef HANDLE HICON;
 typedef HANDLE HCURSOR;
 typedef HANDLE HBRUSH;
 typedef HANDLE HDC;
+typedef HANDLE HFONT;
 typedef const wchar_t *LPCWSTR;
 typedef wchar_t *LPWSTR;
 typedef unsigned int UINT;
@@ -77,6 +78,18 @@ typedef struct {
     DWORD biClrUsed;
     DWORD biClrImportant;
 } BITMAPINFOHEADER;
+typedef struct {
+    UINT CtlType;
+    UINT CtlID;
+    UINT itemID;
+    UINT itemAction;
+    UINT itemState;
+    HWND hwndItem;
+    HDC hDC;
+    RECT rcItem;
+    unsigned long long itemData;
+} DRAWITEMSTRUCT;
+typedef char drawitem_layout_must_be_64_bytes[(sizeof(DRAWITEMSTRUCT) == 64) ? 1 : -1];
 /* Matching Windows 64-bit INPUT layout: sizeof(INPUT) == 40. */
 typedef struct {
     WORD wVk;
@@ -158,8 +171,16 @@ __declspec(dllimport) HDC BeginPaint(HWND, PAINTSTRUCT *);
 __declspec(dllimport) BOOL EndPaint(HWND, const PAINTSTRUCT *);
 __declspec(dllimport) int FillRect(HDC, const RECT *, HBRUSH);
 __declspec(dllimport) int DrawTextW(HDC, LPCWSTR, int, RECT *, UINT);
+__declspec(dllimport) BOOL DrawFocusRect(HDC, const RECT *);
 __declspec(dllimport) HANDLE GetStockObject(int);
 __declspec(dllimport) HANDLE SelectObject(HDC, HANDLE);
+__declspec(dllimport) HBRUSH CreateSolidBrush(DWORD);
+__declspec(dllimport) HFONT CreateFontW(int, int, int, int, int, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, LPCWSTR);
+__declspec(dllimport) BOOL DeleteObject(HANDLE);
+__declspec(dllimport) int SetBkMode(HDC, int);
+__declspec(dllimport) DWORD SetBkColor(HDC, DWORD);
+__declspec(dllimport) DWORD SetTextColor(HDC, DWORD);
+__declspec(dllimport) BOOL RoundRect(HDC, int, int, int, int, int, int);
 __declspec(dllimport) int StretchDIBits(HDC, int, int, int, int, int, int, int, int, const void *, const void *, UINT, DWORD);
 
 #define WS_OVERLAPPEDWINDOW   0x00CF0000u
@@ -169,6 +190,7 @@ __declspec(dllimport) int StretchDIBits(HDC, int, int, int, int, int, int, int, 
 #define WS_TABSTOP            0x00010000u
 #define WS_BORDER             0x00800000u
 #define BS_GROUPBOX           0x0007u
+#define BS_OWNERDRAW          0x000Bu
 #define SS_CENTER             0x0001u
 #define SS_CENTERIMAGE        0x0200u
 #define ES_MULTILINE          0x0004u
@@ -181,9 +203,15 @@ __declspec(dllimport) int StretchDIBits(HDC, int, int, int, int, int, int, int, 
 #define WM_DESTROY            0x0002u
 #define WM_SIZE               0x0005u
 #define WM_PAINT              0x000Fu
+#define WM_ERASEBKGND         0x0014u
+#define WM_DRAWITEM           0x002Bu
 #define WM_SETTEXT            0x000Cu
 #define WM_COMMAND            0x0111u
 #define WM_SETFONT            0x0030u
+#define WM_CTLCOLOREDIT       0x0133u
+#define WM_CTLCOLORLISTBOX    0x0134u
+#define WM_CTLCOLORBTN        0x0135u
+#define WM_CTLCOLORSTATIC     0x0138u
 #define EM_SETLIMITTEXT       0x00C5u
 #define EM_SETSEL             0x00B1u
 #define EM_REPLACESEL         0x00C2u
@@ -214,6 +242,7 @@ __declspec(dllimport) int StretchDIBits(HDC, int, int, int, int, int, int, int, 
 #define COLOR_WINDOW          5u
 #define DEFAULT_GUI_FONT      17
 #define WHITE_BRUSH           0
+#define NULL_PEN              8
 #define IDC_ARROW             32512u
 #define PROCESS_QUERY_LIMITED_INFORMATION 0x1000u
 #define GMEM_MOVEABLE         0x0002u
@@ -227,6 +256,15 @@ __declspec(dllimport) int StretchDIBits(HDC, int, int, int, int, int, int, int, 
 #define DT_CENTER             0x00000001u
 #define DT_VCENTER            0x00000004u
 #define DT_SINGLELINE         0x00000020u
+#define ODS_SELECTED          0x0001u
+#define ODS_DISABLED          0x0004u
+#define ODS_FOCUS             0x0010u
+#define TRANSPARENT           1
+#define FW_NORMAL             400
+#define FW_SEMIBOLD           600
+#define DEFAULT_CHARSET       1u
+#define CLEARTYPE_QUALITY     5u
+#define RGB_COLOR(r, g, b)    ((DWORD)((BYTE)(r) | ((DWORD)(BYTE)(g) << 8) | ((DWORD)(BYTE)(b) << 16)))
 
 static HWND listbox;
 static HWND selected_listbox;
@@ -252,6 +290,10 @@ static HGLOBAL stored_image;
 static UINT stored_image_format;
 static UINT png_clipboard_format;
 static wchar_t prepared_text[4096];
+static HBRUSH app_background_brush;
+static HBRUSH surface_brush;
+static HFONT app_font;
+static HFONT section_font;
 
 static int maximum(int a, int b) { return a > b ? a : b; }
 
@@ -988,9 +1030,64 @@ static void type_message_to_selected_rooms(void) {
     append_log(L"[완료] 선택된 모든 방의 입력을 완료했습니다.\r\n");
 }
 
-static void set_default_font(HWND control) {
-    if (control) {
-        SendMessageW(control, WM_SETFONT, (WPARAM)GetStockObject(DEFAULT_GUI_FONT), 1);
+static void set_control_font(HWND control, HFONT font) {
+    if (control && font) SendMessageW(control, WM_SETFONT, (WPARAM)font, 1);
+}
+
+static void draw_modern_button(const DRAWITEMSTRUCT *item) {
+    wchar_t text[128];
+    RECT bounds;
+    RECT focus_bounds;
+    HBRUSH brush;
+    HANDLE previous_brush;
+    HANDLE previous_pen;
+    HANDLE previous_font;
+    DWORD background;
+    DWORD foreground;
+    BOOL primary;
+    if (!item || !item->hDC || !item->hwndItem) return;
+    primary = item->hwndItem == add_button || item->hwndItem == message_button;
+    if (item->itemState & ODS_DISABLED) {
+        background = RGB_COLOR(218, 222, 229);
+        foreground = RGB_COLOR(122, 130, 143);
+    } else if (primary) {
+        background = (item->itemState & ODS_SELECTED) ?
+            RGB_COLOR(29, 78, 216) : RGB_COLOR(37, 99, 235);
+        foreground = RGB_COLOR(255, 255, 255);
+    } else {
+        background = (item->itemState & ODS_SELECTED) ?
+            RGB_COLOR(214, 220, 229) : RGB_COLOR(232, 236, 242);
+        foreground = RGB_COLOR(31, 41, 55);
+    }
+    bounds = item->rcItem;
+    brush = CreateSolidBrush(background);
+    previous_brush = SelectObject(item->hDC, brush);
+    previous_pen = SelectObject(item->hDC, GetStockObject(NULL_PEN));
+    RoundRect(
+        item->hDC,
+        bounds.left, bounds.top, bounds.right, bounds.bottom,
+        10, 10
+    );
+    SelectObject(item->hDC, previous_pen);
+    SelectObject(item->hDC, previous_brush);
+    DeleteObject(brush);
+    previous_font = SelectObject(item->hDC, app_font);
+    SetBkMode(item->hDC, TRANSPARENT);
+    SetTextColor(item->hDC, foreground);
+    text[0] = 0;
+    GetWindowTextW(item->hwndItem, text, 128);
+    DrawTextW(
+        item->hDC, text, -1, &bounds,
+        DT_CENTER | DT_VCENTER | DT_SINGLELINE
+    );
+    SelectObject(item->hDC, previous_font);
+    if (item->itemState & ODS_FOCUS) {
+        focus_bounds = bounds;
+        focus_bounds.left += 4;
+        focus_bounds.top += 4;
+        focus_bounds.right -= 4;
+        focus_bounds.bottom -= 4;
+        DrawFocusRect(item->hDC, &focus_bounds);
     }
 }
 
@@ -1013,37 +1110,39 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
         );
         listbox = CreateWindowExW(
             0, L"LISTBOX", L"",
-            WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_TABSTOP | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT,
+            WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_TABSTOP | WS_BORDER |
+                LBS_NOTIFY | LBS_NOINTEGRALHEIGHT,
             0, 0, 100, 100,
             hwnd, (HANDLE)0, instance, (void *)0
         );
         selected_listbox = CreateWindowExW(
             0, L"LISTBOX", L"",
-            WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_TABSTOP | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT,
+            WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_TABSTOP | WS_BORDER |
+                LBS_NOTIFY | LBS_NOINTEGRALHEIGHT,
             0, 0, 100, 100,
             hwnd, (HANDLE)0, instance, (void *)0
         );
         add_button = CreateWindowExW(
             0, L"BUTTON", L"선택 →",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
             0, 0, 90, 30,
             hwnd, (HANDLE)0, instance, (void *)0
         );
         remove_button = CreateWindowExW(
             0, L"BUTTON", L"← 제외",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
             0, 0, 90, 30,
             hwnd, (HANDLE)0, instance, (void *)0
         );
         focus_button = CreateWindowExW(
             0, L"BUTTON", L"포커스 이동",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
             0, 0, 110, 30,
             hwnd, (HANDLE)0, instance, (void *)0
         );
         keys_button = CreateWindowExW(
             0, L"BUTTON", L"지정 키 입력",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
             0, 0, 110, 30,
             hwnd, (HANDLE)0, instance, (void *)0
         );
@@ -1067,13 +1166,13 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
         );
         image_paste_button = CreateWindowExW(
             0, L"BUTTON", L"이미지 붙여넣기",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
             0, 0, 120, 30,
             hwnd, (HANDLE)0, instance, (void *)0
         );
         image_clear_button = CreateWindowExW(
             0, L"BUTTON", L"이미지 지우기",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
             0, 0, 120, 30,
             hwnd, (HANDLE)0, instance, (void *)0
         );
@@ -1091,7 +1190,7 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
         );
         message_button = CreateWindowExW(
             0, L"BUTTON", L"목록에 내용 입력",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
             0, 0, 150, 30,
             hwnd, (HANDLE)0, instance, (void *)0
         );
@@ -1114,24 +1213,24 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
         active_listbox = listbox;
         png_clipboard_format = RegisterClipboardFormatW(L"PNG");
         if (message_edit) SendMessageW(message_edit, EM_SETLIMITTEXT, 4095, 0);
-        set_default_font(source_label);
-        set_default_font(selected_label);
-        set_default_font(listbox);
-        set_default_font(selected_listbox);
-        set_default_font(add_button);
-        set_default_font(remove_button);
-        set_default_font(focus_button);
-        set_default_font(keys_button);
-        set_default_font(settings_group);
-        set_default_font(image_label);
-        set_default_font(image_status);
-        set_default_font(image_paste_button);
-        set_default_font(image_clear_button);
-        set_default_font(input_label);
-        set_default_font(message_edit);
-        set_default_font(message_button);
-        set_default_font(log_label);
-        set_default_font(log_edit);
+        set_control_font(source_label, section_font);
+        set_control_font(selected_label, section_font);
+        set_control_font(listbox, app_font);
+        set_control_font(selected_listbox, app_font);
+        set_control_font(add_button, app_font);
+        set_control_font(remove_button, app_font);
+        set_control_font(focus_button, app_font);
+        set_control_font(keys_button, app_font);
+        set_control_font(settings_group, section_font);
+        set_control_font(image_label, section_font);
+        set_control_font(image_status, app_font);
+        set_control_font(image_paste_button, app_font);
+        set_control_font(image_clear_button, app_font);
+        set_control_font(input_label, section_font);
+        set_control_font(message_edit, app_font);
+        set_control_font(message_button, app_font);
+        set_control_font(log_label, section_font);
+        set_control_font(log_edit, app_font);
         append_log(L"[준비] 카카오톡 대화창 검색을 완료했습니다.\r\n");
         layout_controls(hwnd);
         return 0;
@@ -1139,6 +1238,35 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
     if (message == WM_SIZE) {
         layout_controls(hwnd);
         return 0;
+    }
+    if (message == WM_ERASEBKGND && app_background_brush) {
+        RECT client;
+        if (GetClientRect(hwnd, &client)) {
+            FillRect((HDC)wparam, &client, app_background_brush);
+            return 1;
+        }
+    }
+    if (message == WM_DRAWITEM) {
+        DRAWITEMSTRUCT *item = (DRAWITEMSTRUCT *)lparam;
+        if (item && item->hwndItem != settings_group) {
+            draw_modern_button(item);
+            return 1;
+        }
+    }
+    if (message == WM_CTLCOLORSTATIC || message == WM_CTLCOLORBTN) {
+        if ((HWND)lparam == log_edit) {
+            SetBkColor((HDC)wparam, RGB_COLOR(255, 255, 255));
+            SetTextColor((HDC)wparam, RGB_COLOR(31, 41, 55));
+            return (LRESULT)surface_brush;
+        }
+        SetBkMode((HDC)wparam, TRANSPARENT);
+        SetTextColor((HDC)wparam, RGB_COLOR(31, 41, 55));
+        return (LRESULT)app_background_brush;
+    }
+    if (message == WM_CTLCOLOREDIT || message == WM_CTLCOLORLISTBOX) {
+        SetBkColor((HDC)wparam, RGB_COLOR(255, 255, 255));
+        SetTextColor((HDC)wparam, RGB_COLOR(31, 41, 55));
+        return (LRESULT)surface_brush;
     }
     if (message == WM_COMMAND) {
         if (((wparam >> 16) & 0xFFFFu) == LBN_SELCHANGE &&
@@ -1183,6 +1311,14 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
     }
     if (message == WM_DESTROY) {
         clear_stored_image(0);
+        if (section_font && section_font != app_font) DeleteObject(section_font);
+        if (app_font && app_font != GetStockObject(DEFAULT_GUI_FONT)) DeleteObject(app_font);
+        if (surface_brush) DeleteObject(surface_brush);
+        if (app_background_brush) DeleteObject(app_background_brush);
+        section_font = (HFONT)0;
+        app_font = (HFONT)0;
+        surface_brush = (HBRUSH)0;
+        app_background_brush = (HBRUSH)0;
         PostQuitMessage(0);
         return 0;
     }
@@ -1196,6 +1332,19 @@ void app_entry(void) {
     HWND hwnd;
     MSG msg;
 
+    app_background_brush = CreateSolidBrush(RGB_COLOR(245, 247, 250));
+    surface_brush = CreateSolidBrush(RGB_COLOR(255, 255, 255));
+    app_font = CreateFontW(
+        -17, 0, 0, 0, FW_NORMAL, 0, 0, 0,
+        DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI"
+    );
+    section_font = CreateFontW(
+        -17, 0, 0, 0, FW_SEMIBOLD, 0, 0, 0,
+        DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI"
+    );
+    if (!app_font) app_font = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+    if (!section_font) section_font = app_font;
+
     preview_class.style = 0;
     preview_class.lpfnWndProc = image_preview_proc;
     preview_class.cbClsExtra = 0;
@@ -1203,7 +1352,8 @@ void app_entry(void) {
     preview_class.hInstance = instance;
     preview_class.hIcon = (HICON)0;
     preview_class.hCursor = LoadCursorW((HINSTANCE)0, (LPCWSTR)(unsigned long long)IDC_ARROW);
-    preview_class.hbrBackground = (HBRUSH)(unsigned long long)(COLOR_WINDOW + 1);
+    preview_class.hbrBackground = surface_brush ? surface_brush :
+        (HBRUSH)(unsigned long long)(COLOR_WINDOW + 1);
     preview_class.lpszMenuName = (LPCWSTR)0;
     preview_class.lpszClassName = L"ImagePreviewMVP";
     RegisterClassW(&preview_class);
@@ -1215,7 +1365,8 @@ void app_entry(void) {
     wc.hInstance = instance;
     wc.hIcon = (HICON)0;
     wc.hCursor = LoadCursorW((HINSTANCE)0, (LPCWSTR)(unsigned long long)IDC_ARROW);
-    wc.hbrBackground = (HBRUSH)(unsigned long long)(COLOR_WINDOW + 1);
+    wc.hbrBackground = app_background_brush ? app_background_brush :
+        (HBRUSH)(unsigned long long)(COLOR_WINDOW + 1);
     wc.lpszMenuName = (LPCWSTR)0;
     wc.lpszClassName = L"WindowListMVP";
     RegisterClassW(&wc);
