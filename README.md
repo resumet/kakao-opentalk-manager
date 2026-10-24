@@ -309,47 +309,63 @@
 - 실제 카카오톡 대화방 목록에서의 마우스 더블클릭과 Ctrl/Shift 다중 선택은 **미검증**.
 - 코드 서명은 적용하지 않음.
 
+### 2026-10-25 저장소 배포 정책 변경
+
+- 제품 소스와 배포 버전은 변경하지 않고 v23 / v1.16을 유지함.
+- `.gitignore`에 `*.exe`를 추가하고 기존 EXE를 Git 추적 대상에서 제외함. 로컬 실행 파일은 삭제하지 않음.
+- 이후 소스·문서·검증 기록은 일반 커밋으로 관리하고, 버전별 standalone EXE는 GitHub Release 자산으로 배포함.
+
 ### 배포 실행 파일 버전 규칙
 
 - 현재 배포 파일: `KakoMVP-v1.16.exe`
 - 구현 이력 버전(v23)과 사용자 배포 파일 버전(v1.16)은 별도로 관리함.
-- 수정점이 발생하는 각 작업마다 배포 버전을 올리고 `KakoMVP-v<배포 버전>.exe` 형식의 실행 파일과 SHA-256을 README에 기록함.
+- 제품 수정이 발생하는 각 작업마다 배포 버전을 올리고 `KakoMVP-v<배포 버전>.exe` 형식의 실행 파일과 SHA-256을 README에 기록함.
+- `*.exe`는 `.gitignore`로 일반 Git 커밋에서 제외하고, 동일한 버전 태그의 GitHub Release 자산으로 배포함.
 
 ### Git 버전 관리
 
 - 원격 저장소: <https://github.com/resumet/kakao-opentalk-manager>
 - 기본 브랜치: `main`
-- 이후 승인된 변경은 소스, README 변경 이력, 빌드 및 테스트 결과를 함께 커밋하고 이 저장소에 푸시함.
+- 이후 승인된 변경은 소스, README 변경 이력, 빌드 및 테스트 결과를 함께 커밋하고 이 저장소에 푸시함. EXE는 커밋에서 제외하고 GitHub Releases에 별도로 업로드함.
+
+### GitHub Release 배포 절차
+
+1. 소스와 문서 커밋을 `main`에 푸시함.
+2. GitHub 저장소의 **Releases**에서 **Draft a new release**를 선택함.
+3. 배포 버전과 같은 태그(예: `v1.16`)를 새로 만들고 대상 브랜치를 `main`으로 지정함.
+4. Release 제목(예: `KakoMVP v1.16`)과 변경 내용을 작성함.
+5. 로컬에서 빌드한 `KakoMVP-v1.16.exe`를 Release 자산으로 첨부하고 README에 기록된 SHA-256과 일치하는지 확인함.
+6. **Publish release**로 배포함.
+
+GitHub CLI를 사용할 수 있는 환경에서는 다음 형식으로 배포할 수 있음.
+
+```powershell
+gh auth login
+gh release create v1.16 .\KakoMVP-v1.16.exe `
+  --repo resumet/kakao-opentalk-manager `
+  --title "KakoMVP v1.16" `
+  --notes "v1.16 변경 사항과 검증 결과"
+```
+
+현재 작업 환경에는 GitHub CLI(`gh`)가 설치되어 있지 않으므로 Release 생성은 GitHub 웹 화면을 사용하거나 CLI 설치 후 수행해야 함.
 
 ## 4. 폴더 구조
 
 ```text
 KakaoMVP_v5_Codex/
 ├── .gitattributes # C/Markdown/RC/TXT LF 및 EXE/TTF 바이너리 취급 고정
+├── .gitignore     # 로컬 EXE 빌드 결과를 Git 커밋에서 제외
 ├── assets/
 │   ├── Pretendard-Regular.ttf  # EXE에 포함할 일반 글꼴
 │   └── Pretendard-SemiBold.ttf # EXE에 포함할 제목 글꼴
 ├── main.c       # v5 기준선에 승인된 v23 기능을 반영한 C 소스
 ├── resources.rc # Pretendard 글꼴 리소스 정의
 ├── LICENSE-Pretendard.txt # Pretendard SIL OFL 1.1 라이선스
-├── KakoMVP-v1.4.exe # v11 Windows x64 standalone 실행 파일(이전 배포)
-├── KakoMVP-v1.5.exe # v12 Windows x64 standalone 실행 파일(이전 배포)
-├── KakoMVP-v1.6.exe # v13 Windows x64 standalone 실행 파일(이전 배포)
-├── KakoMVP-v1.7.exe # v14 Windows x64 standalone 실행 파일(이전 배포)
-├── KakoMVP-v1.8.exe # v15 Windows x64 standalone 실행 파일(이전 배포)
-├── KakoMVP-v1.9.exe # v16 Windows x64 standalone 실행 파일(이전 배포)
-├── KakoMVP-v1.10.exe # v17 Windows x64 standalone 실행 파일(이전 배포)
-├── KakoMVP-v1.11.exe # v18 Windows x64 standalone 실행 파일(이전 배포)
-├── KakoMVP-v1.12.exe # v19 Windows x64 standalone 실행 파일(이전 배포)
-├── KakoMVP-v1.13.exe # v20 Windows x64 standalone 실행 파일(이전 배포)
-├── KakoMVP-v1.14.exe # v21 Windows x64 standalone 실행 파일(이전 배포)
-├── KakoMVP-v1.15.exe # v22 Windows x64 standalone 실행 파일(이전 배포)
-├── KakoMVP-v1.16.exe # v23 Windows x64 standalone 실행 파일(배포 v1.16)
 ├── README.md    # 구현 이력, 빌드·검증·제약사항
 └── AGENTS.md    # Codex가 자동으로 읽을 수 있는 개발 규칙
 ```
 
-이 폴더는 소스 중심 작업 폴더이며, 이전 배포 파일과 현재 `KakoMVP-v1.16.exe`를 함께 포함합니다. TTF 파일은 빌드 입력이며 실행할 때는 EXE 내부 리소스에서 로드됩니다.
+이 폴더는 소스 중심 작업 폴더입니다. 로컬에서 생성한 `KakoMVP-v1.16.exe`와 이후 EXE는 폴더에 남아 있어도 Git이 추적하지 않으며, 배포본은 GitHub Releases에서 관리합니다. TTF 파일은 빌드 입력이며 실행할 때는 EXE 내부 리소스에서 로드됩니다.
 
 ## 5. 현재 소스 구조 (`main.c`)
 
