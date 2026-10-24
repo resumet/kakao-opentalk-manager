@@ -473,7 +473,7 @@ static void type_message_to_selected_rooms(void) {
     for (index = 0; index < count; ++index) {
         target = chat_window_at(selected_listbox, index);
         if (!target || !type_text_to_chat(target, prepared_text)) return;
-        if (index + 1 < count) Sleep(150);
+        if (index + 1 < count) Sleep(1500);
     }
 }
 
