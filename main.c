@@ -18,6 +18,7 @@ typedef HANDLE HINSTANCE;
 typedef HANDLE HICON;
 typedef HANDLE HCURSOR;
 typedef HANDLE HBRUSH;
+typedef HANDLE HDC;
 typedef const wchar_t *LPCWSTR;
 typedef wchar_t *LPWSTR;
 typedef unsigned int UINT;
@@ -55,6 +56,27 @@ typedef struct {
     LPCWSTR lpszClassName;
 } WNDCLASSW;
 typedef struct { LONG left; LONG top; LONG right; LONG bottom; } RECT;
+typedef struct {
+    HDC hdc;
+    BOOL fErase;
+    RECT rcPaint;
+    BOOL fRestore;
+    BOOL fIncUpdate;
+    BYTE rgbReserved[32];
+} PAINTSTRUCT;
+typedef struct {
+    DWORD biSize;
+    LONG biWidth;
+    LONG biHeight;
+    WORD biPlanes;
+    WORD biBitCount;
+    DWORD biCompression;
+    DWORD biSizeImage;
+    LONG biXPelsPerMeter;
+    LONG biYPelsPerMeter;
+    DWORD biClrUsed;
+    DWORD biClrImportant;
+} BITMAPINFOHEADER;
 /* Matching Windows 64-bit INPUT layout: sizeof(INPUT) == 40. */
 typedef struct {
     WORD wVk;
@@ -119,7 +141,14 @@ __declspec(dllimport) BOOL IsClipboardFormatAvailable(UINT);
 __declspec(dllimport) HANDLE GetClipboardData(UINT);
 __declspec(dllimport) HANDLE SetClipboardData(UINT, HANDLE);
 __declspec(dllimport) UINT RegisterClipboardFormatW(LPCWSTR);
+__declspec(dllimport) BOOL InvalidateRect(HWND, const RECT *, BOOL);
+__declspec(dllimport) HDC BeginPaint(HWND, PAINTSTRUCT *);
+__declspec(dllimport) BOOL EndPaint(HWND, const PAINTSTRUCT *);
+__declspec(dllimport) int FillRect(HDC, const RECT *, HBRUSH);
+__declspec(dllimport) int DrawTextW(HDC, LPCWSTR, int, RECT *, UINT);
 __declspec(dllimport) HANDLE GetStockObject(int);
+__declspec(dllimport) HANDLE SelectObject(HDC, HANDLE);
+__declspec(dllimport) int StretchDIBits(HDC, int, int, int, int, int, int, int, int, const void *, const void *, UINT, DWORD);
 
 #define WS_OVERLAPPEDWINDOW   0x00CF0000u
 #define WS_VISIBLE            0x10000000u
@@ -139,6 +168,7 @@ __declspec(dllimport) HANDLE GetStockObject(int);
 #define WM_CREATE             0x0001u
 #define WM_DESTROY            0x0002u
 #define WM_SIZE               0x0005u
+#define WM_PAINT              0x000Fu
 #define WM_SETTEXT            0x000Cu
 #define WM_COMMAND            0x0111u
 #define WM_SETFONT            0x0030u
@@ -167,11 +197,20 @@ __declspec(dllimport) HANDLE GetStockObject(int);
 #define VK_V                  0x56u
 #define COLOR_WINDOW          5u
 #define DEFAULT_GUI_FONT      17
+#define WHITE_BRUSH           0
 #define IDC_ARROW             32512u
 #define PROCESS_QUERY_LIMITED_INFORMATION 0x1000u
 #define GMEM_MOVEABLE         0x0002u
 #define CF_DIB                8u
 #define CF_DIBV5              17u
+#define BI_RGB                0u
+#define BI_BITFIELDS          3u
+#define BI_ALPHABITFIELDS     6u
+#define DIB_RGB_COLORS        0u
+#define SRCCOPY               0x00CC0020u
+#define DT_CENTER             0x00000001u
+#define DT_VCENTER            0x00000004u
+#define DT_SINGLELINE         0x00000020u
 
 static HWND listbox;
 static HWND selected_listbox;
@@ -245,10 +284,104 @@ static HGLOBAL clone_global_memory(HGLOBAL source) {
 
 static void update_image_status(void) {
     if (!image_status) return;
-    SendMessageW(
-        image_status, WM_SETTEXT, 0,
-        (LPARAM)(stored_image ? L"이미지 저장됨" : L"이미지 없음")
-    );
+    InvalidateRect(image_status, (const RECT *)0, 1);
+}
+
+static BOOL stored_dib_details(
+    const BYTE *data,
+    unsigned long long size,
+    const BITMAPINFOHEADER **header_result,
+    const BYTE **bits_result,
+    int *width_result,
+    int *height_result
+) {
+    const BITMAPINFOHEADER *header;
+    unsigned long long offset;
+    unsigned long long color_count;
+    long long image_height;
+    if (!data || size < sizeof(BITMAPINFOHEADER)) return 0;
+    header = (const BITMAPINFOHEADER *)data;
+    if (header->biSize < sizeof(BITMAPINFOHEADER) || header->biSize >= size) return 0;
+    if (header->biWidth <= 0 || header->biHeight == 0 || header->biPlanes != 1) return 0;
+    image_height = header->biHeight < 0 ? -(long long)header->biHeight : header->biHeight;
+    if (image_height > 0x7FFFFFFF) return 0;
+    offset = header->biSize;
+    if (header->biSize == sizeof(BITMAPINFOHEADER)) {
+        if (header->biCompression == BI_BITFIELDS) offset += 3u * sizeof(DWORD);
+        if (header->biCompression == BI_ALPHABITFIELDS) offset += 4u * sizeof(DWORD);
+    }
+    if (offset > size) return 0;
+    if (header->biClrUsed) {
+        color_count = header->biClrUsed;
+    } else if (header->biBitCount <= 8) {
+        color_count = 1ull << header->biBitCount;
+    } else {
+        color_count = 0;
+    }
+    if (color_count > (size - offset) / 4u) return 0;
+    offset += color_count * 4u;
+    if (offset >= size) return 0;
+    *header_result = header;
+    *bits_result = data + offset;
+    *width_result = header->biWidth;
+    *height_result = (int)image_height;
+    return 1;
+}
+
+static LRESULT image_preview_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
+    if (message == WM_PAINT) {
+        PAINTSTRUCT paint;
+        RECT client;
+        HDC dc = BeginPaint(hwnd, &paint);
+        const wchar_t *status = L"이미지 없음";
+        if (!dc) return 0;
+        GetClientRect(hwnd, &client);
+        FillRect(dc, &client, (HBRUSH)GetStockObject(WHITE_BRUSH));
+        if (stored_image &&
+            (stored_image_format == CF_DIB || stored_image_format == CF_DIBV5)) {
+            unsigned long long size = GlobalSize(stored_image);
+            const BYTE *data = (const BYTE *)GlobalLock(stored_image);
+            const BITMAPINFOHEADER *header;
+            const BYTE *bits;
+            int image_width;
+            int image_height;
+            if (data && stored_dib_details(
+                    data, size, &header, &bits, &image_width, &image_height)) {
+                int available_width = maximum(0, client.right - client.left - 8);
+                int available_height = maximum(0, client.bottom - client.top - 8);
+                int draw_width = available_width;
+                int draw_height = image_width ?
+                    (int)((long long)draw_width * image_height / image_width) : 0;
+                int draw_x;
+                int draw_y;
+                if (draw_height > available_height && image_height) {
+                    draw_height = available_height;
+                    draw_width = (int)((long long)draw_height * image_width / image_height);
+                }
+                draw_x = (client.right - draw_width) / 2;
+                draw_y = (client.bottom - draw_height) / 2;
+                if (draw_width > 0 && draw_height > 0) {
+                    StretchDIBits(
+                        dc, draw_x, draw_y, draw_width, draw_height,
+                        0, 0, image_width, image_height,
+                        bits, header, DIB_RGB_COLORS, SRCCOPY
+                    );
+                    GlobalUnlock(stored_image);
+                    EndPaint(hwnd, &paint);
+                    return 0;
+                }
+            }
+            if (data) GlobalUnlock(stored_image);
+            status = L"이미지 미리보기 실패";
+        } else if (stored_image) {
+            status = L"PNG 이미지 저장됨";
+        }
+        SelectObject(dc, GetStockObject(DEFAULT_GUI_FONT));
+        DrawTextW(dc, status, -1, &client, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        EndPaint(hwnd, &paint);
+        return 0;
+    }
+    return DefWindowProcW(hwnd, message, wparam, lparam);
 }
 
 static void clear_stored_image(BOOL write_log) {
@@ -444,26 +577,26 @@ static void layout_controls(HWND hwnd) {
         MoveWindow(image_label, settings_x + 15, 38, maximum(0, settings_width - 30), 20, 1);
     }
     if (image_status) {
-        MoveWindow(image_status, settings_x + 15, 62, maximum(0, settings_width - 30), 54, 1);
+        MoveWindow(image_status, settings_x + 15, 62, maximum(0, settings_width - 30), 120, 1);
     }
     if (image_paste_button) {
-        MoveWindow(image_paste_button, settings_x + 15, 126, half_button_width, 30, 1);
+        MoveWindow(image_paste_button, settings_x + 15, 192, half_button_width, 30, 1);
     }
     if (image_clear_button) {
         MoveWindow(
             image_clear_button,
             settings_x + 20 + half_button_width,
-            126, half_button_width, 30, 1
+            192, half_button_width, 30, 1
         );
     }
     if (input_label) {
-        MoveWindow(input_label, settings_x + 15, 172, maximum(0, settings_width - 30), 20, 1);
+        MoveWindow(input_label, settings_x + 15, 238, maximum(0, settings_width - 30), 20, 1);
     }
     if (message_edit) {
-        MoveWindow(message_edit, settings_x + 15, 196, maximum(0, settings_width - 30), 30, 1);
+        MoveWindow(message_edit, settings_x + 15, 262, maximum(0, settings_width - 30), 30, 1);
     }
     if (message_button) {
-        MoveWindow(message_button, settings_x + 15, 236, maximum(0, settings_width - 30), 34, 1);
+        MoveWindow(message_button, settings_x + 15, 302, maximum(0, settings_width - 30), 34, 1);
     }
     if (log_label) {
         MoveWindow(log_label, 10, log_label_y, maximum(0, width - 20), 20, 1);
@@ -851,9 +984,9 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
             hwnd, (HANDLE)0, instance, (void *)0
         );
         image_status = CreateWindowExW(
-            0, L"STATIC", L"이미지 없음",
-            WS_CHILD | WS_VISIBLE | WS_BORDER | SS_CENTER | SS_CENTERIMAGE,
-            0, 0, 100, 54,
+            0, L"ImagePreviewMVP", L"",
+            WS_CHILD | WS_VISIBLE | WS_BORDER,
+            0, 0, 100, 120,
             hwnd, (HANDLE)0, instance, (void *)0
         );
         image_paste_button = CreateWindowExW(
@@ -983,8 +1116,21 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
 void app_entry(void) {
     HINSTANCE instance = GetModuleHandleW((LPCWSTR)0);
     WNDCLASSW wc;
+    WNDCLASSW preview_class;
     HWND hwnd;
     MSG msg;
+
+    preview_class.style = 0;
+    preview_class.lpfnWndProc = image_preview_proc;
+    preview_class.cbClsExtra = 0;
+    preview_class.cbWndExtra = 0;
+    preview_class.hInstance = instance;
+    preview_class.hIcon = (HICON)0;
+    preview_class.hCursor = LoadCursorW((HINSTANCE)0, (LPCWSTR)(unsigned long long)IDC_ARROW);
+    preview_class.hbrBackground = (HBRUSH)(unsigned long long)(COLOR_WINDOW + 1);
+    preview_class.lpszMenuName = (LPCWSTR)0;
+    preview_class.lpszClassName = L"ImagePreviewMVP";
+    RegisterClassW(&preview_class);
 
     wc.style = 0;
     wc.lpfnWndProc = window_proc;
