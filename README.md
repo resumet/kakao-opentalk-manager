@@ -315,6 +315,14 @@
 - `.gitignore`에 `*.exe`를 추가하고 기존 EXE를 Git 추적 대상에서 제외함. 로컬 실행 파일은 삭제하지 않음.
 - 이후 소스·문서·검증 기록은 일반 커밋으로 관리하고, 버전별 standalone EXE는 GitHub Release 자산으로 배포함.
 
+### 2026-10-25 GitHub Release 자동화
+
+- 제품 소스와 배포 버전은 변경하지 않고 v23 / v1.16을 유지함.
+- `scripts/publish-release.ps1`을 추가해 `main`의 커밋·푸시 상태, 작업 트리, README/AGENTS 배포 버전 및 기존 태그 유무를 검사한 뒤 annotated tag를 생성하고 푸시하도록 구성함.
+- `v*` 태그가 푸시되면 `.github/workflows/release.yml`이 GitHub의 Windows runner에서 MSVC로 Windows x64 standalone EXE를 빌드함.
+- 자동 빌드는 PE의 x64/PE32+/Windows GUI 속성을 검사하고 SHA-256 체크섬을 생성한 뒤 같은 태그의 GitHub Release에 EXE와 체크섬 파일을 첨부함.
+- 실패한 실행을 다시 처리할 수 있도록 기존 태그를 입력하는 수동 실행(`workflow_dispatch`)도 제공하며, 기존 Release가 있으면 자산과 설명을 갱신함.
+
 ### 배포 실행 파일 버전 규칙
 
 - 현재 배포 파일: `KakoMVP-v1.16.exe`
@@ -330,34 +338,37 @@
 
 ### GitHub Release 배포 절차
 
-1. 소스와 문서 커밋을 `main`에 푸시함.
-2. GitHub 저장소의 **Releases**에서 **Draft a new release**를 선택함.
-3. 배포 버전과 같은 태그(예: `v1.16`)를 새로 만들고 대상 브랜치를 `main`으로 지정함.
-4. Release 제목(예: `KakoMVP v1.16`)과 변경 내용을 작성함.
-5. 로컬에서 빌드한 `KakoMVP-v1.16.exe`를 Release 자산으로 첨부하고 README에 기록된 SHA-256과 일치하는지 확인함.
-6. **Publish release**로 배포함.
-
-GitHub CLI를 사용할 수 있는 환경에서는 다음 형식으로 배포할 수 있음.
+1. 제품 변경 때 `README.md`와 `AGENTS.md`의 배포 버전, 빌드 명령의 파일명을 함께 올림.
+2. 소스와 문서를 커밋하여 `main`에 푸시함.
+3. 저장소 루트의 PowerShell에서 같은 버전으로 아래 명령을 한 번 실행함.
 
 ```powershell
-gh auth login
-gh release create v1.16 .\KakoMVP-v1.16.exe `
-  --repo resumet/kakao-opentalk-manager `
-  --title "KakoMVP v1.16" `
-  --notes "v1.16 변경 사항과 검증 결과"
+.\scripts\publish-release.ps1 v1.16
 ```
 
-현재 작업 환경에는 GitHub CLI(`gh`)가 설치되어 있지 않으므로 Release 생성은 GitHub 웹 화면을 사용하거나 CLI 설치 후 수행해야 함.
+스크립트가 현재 `main`과 `origin/main`의 일치 여부를 확인하고 `v1.16` annotated tag를 만들어 푸시합니다. 태그 푸시 이후 GitHub Actions가 다음 작업을 자동 실행합니다.
+
+1. 태그 시점의 소스를 체크아웃하고 README/AGENTS 버전 일치를 검사함.
+2. GitHub Windows runner의 Visual Studio C++ x64 도구와 Windows SDK로 `KakoMVP-v1.16.exe`를 빌드함.
+3. 결과가 x64 PE32+ Windows GUI 실행 파일인지 검사하고 SHA-256 파일을 생성함.
+4. `KakoMVP v1.16` GitHub Release를 만들고 EXE 및 `KakoMVP-v1.16.exe.sha256.txt`를 첨부함.
+
+태그가 이미 있거나 작업 트리에 미커밋 변경이 있거나 `main`이 원격과 다르면 스크립트는 새 태그를 만들지 않습니다. 자동 실행이 실패하면 GitHub **Actions → Build and publish Windows release → Run workflow**에서 기존 태그를 입력해 다시 실행할 수 있습니다.
 
 ## 4. 폴더 구조
 
 ```text
 KakaoMVP_v5_Codex/
+├── .github/
+│   └── workflows/
+│       └── release.yml # 버전 태그 푸시 시 Windows EXE 빌드 및 Release 배포
 ├── .gitattributes # C/Markdown/RC/TXT LF 및 EXE/TTF 바이너리 취급 고정
 ├── .gitignore     # 로컬 EXE 빌드 결과를 Git 커밋에서 제외
 ├── assets/
 │   ├── Pretendard-Regular.ttf  # EXE에 포함할 일반 글꼴
 │   └── Pretendard-SemiBold.ttf # EXE에 포함할 제목 글꼴
+├── scripts/
+│   └── publish-release.ps1 # 배포 버전 검사, annotated tag 생성 및 푸시
 ├── main.c       # v5 기준선에 승인된 v23 기능을 반영한 C 소스
 ├── resources.rc # Pretendard 글꼴 리소스 정의
 ├── LICENSE-Pretendard.txt # Pretendard SIL OFL 1.1 라이선스
