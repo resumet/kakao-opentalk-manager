@@ -113,7 +113,10 @@ __declspec(dllimport) HANDLE GetStockObject(int);
 #define WS_VSCROLL            0x00200000u
 #define WS_TABSTOP            0x00010000u
 #define WS_BORDER             0x00800000u
+#define ES_MULTILINE          0x0004u
+#define ES_AUTOVSCROLL        0x0040u
 #define ES_AUTOHSCROLL        0x0080u
+#define ES_READONLY           0x0800u
 #define LBS_NOTIFY            0x0001u
 #define LBS_NOINTEGRALHEIGHT  0x0100u
 #define WM_CREATE             0x0001u
@@ -122,6 +125,10 @@ __declspec(dllimport) HANDLE GetStockObject(int);
 #define WM_COMMAND            0x0111u
 #define WM_SETFONT            0x0030u
 #define EM_SETLIMITTEXT       0x00C5u
+#define EM_SETSEL             0x00B1u
+#define EM_REPLACESEL         0x00C2u
+#define EM_SETREADONLY        0x00CFu
+#define EM_SCROLLCARET        0x00B7u
 #define LB_ADDSTRING          0x0180u
 #define LB_DELETESTRING       0x0182u
 #define LB_SETCURSEL          0x0186u
@@ -155,10 +162,21 @@ static HWND focus_button;
 static HWND keys_button;
 static HWND message_edit;
 static HWND message_button;
+static HWND log_label;
+static HWND log_edit;
 static HWND main_window;
 static wchar_t prepared_text[4096];
 
 static int maximum(int a, int b) { return a > b ? a : b; }
+
+static void append_log(const wchar_t *text) {
+    if (!log_edit || !text) return;
+    SendMessageW(log_edit, EM_SETREADONLY, 0, 0);
+    SendMessageW(log_edit, EM_SETSEL, (WPARAM)-1, (LPARAM)-1);
+    SendMessageW(log_edit, EM_REPLACESEL, 0, (LPARAM)text);
+    SendMessageW(log_edit, EM_SETREADONLY, 1, 0);
+    SendMessageW(log_edit, EM_SCROLLCARET, 0, 0);
+}
 
 /* Only case-fold ASCII characters; the executable/class names are ASCII. */
 static wchar_t ascii_lower(wchar_t c) {
@@ -252,11 +270,17 @@ static BOOL looks_like_chat_window(HWND hwnd) {
 static void layout_controls(HWND hwnd) {
     RECT rect;
     int width, height, list_width, list_height, center_x, right_x;
+    int action_y, input_y, log_label_y, log_top, log_height;
     if (!GetClientRect(hwnd, &rect)) return;
     width = rect.right - rect.left;
     height = rect.bottom - rect.top;
+    log_top = maximum(0, height - 130);
+    log_height = maximum(0, height - log_top - 10);
+    log_label_y = maximum(0, log_top - 24);
+    input_y = maximum(0, log_label_y - 40);
+    action_y = maximum(0, input_y - 38);
     list_width = maximum(0, (width - 150) / 2);
-    list_height = maximum(0, height - 144);
+    list_height = maximum(0, action_y - 44);
     center_x = 20 + list_width;
     right_x = center_x + 110;
     if (source_label) {
@@ -278,19 +302,25 @@ static void layout_controls(HWND hwnd) {
         MoveWindow(remove_button, center_x, 104, 90, 30, 1);
     }
     if (focus_button) {
-        MoveWindow(focus_button, 10, maximum(0, height - 92), 110, 30, 1);
+        MoveWindow(focus_button, 10, action_y, 110, 30, 1);
     }
     if (keys_button) {
-        MoveWindow(keys_button, 130, maximum(0, height - 92), 110, 30, 1);
+        MoveWindow(keys_button, 130, action_y, 110, 30, 1);
     }
     if (input_label) {
-        MoveWindow(input_label, 10, maximum(0, height - 48), 70, 24, 1);
+        MoveWindow(input_label, 10, input_y + 6, 70, 24, 1);
     }
     if (message_edit) {
-        MoveWindow(message_edit, 80, maximum(0, height - 54), maximum(0, width - 250), 30, 1);
+        MoveWindow(message_edit, 80, input_y, maximum(0, width - 250), 30, 1);
     }
     if (message_button) {
-        MoveWindow(message_button, maximum(0, width - 160), maximum(0, height - 54), 150, 30, 1);
+        MoveWindow(message_button, maximum(0, width - 160), input_y, 150, 30, 1);
+    }
+    if (log_label) {
+        MoveWindow(log_label, 10, log_label_y, maximum(0, width - 20), 20, 1);
+    }
+    if (log_edit) {
+        MoveWindow(log_edit, 10, log_top, maximum(0, width - 20), log_height, 1);
     }
 }
 
@@ -425,11 +455,28 @@ static void move_selected_room(HWND from, HWND to) {
     SendMessageW(from, LB_DELETESTRING, (WPARAM)index, 0);
     SendMessageW(to, LB_SETCURSEL, (WPARAM)new_index, 0);
     active_listbox = to;
+    if (to == selected_listbox) {
+        append_log(L"[선택] ");
+        append_log(title);
+        append_log(L"\r\n");
+    } else {
+        append_log(L"[제외] ");
+        append_log(title);
+        append_log(L"\r\n");
+    }
 }
 
 static void focus_selected_window(void) {
     HWND target = selected_chat_window();
-    if (target) focus_chat_input(target);
+    if (!target) {
+        append_log(L"[실패] 포커스를 이동할 대화방을 선택해 주세요.\r\n");
+        return;
+    }
+    if (focus_chat_input(target)) {
+        append_log(L"[성공] 선택한 대화방 입력칸으로 포커스를 이동했습니다.\r\n");
+    } else {
+        append_log(L"[실패] 선택한 대화방의 입력칸에 포커스를 설정하지 못했습니다.\r\n");
+    }
 }
 
 /* Win32 SendInput KEYEVENTF_UNICODE generates WM_CHAR in the target editor,
@@ -459,17 +506,30 @@ static BOOL send_enter(void) {
 static void type_sequence_to_selected(void) {
     HWND target = selected_chat_window();
     const wchar_t *suffix = L"가나다";
-    if (!target || !focus_chat_input(target)) return;
+    if (!target) {
+        append_log(L"[실패] 지정 키를 입력할 대화방을 선택해 주세요.\r\n");
+        return;
+    }
+    append_log(L"[진행] 지정 키 입력을 시작합니다.\r\n");
+    if (!focus_chat_input(target)) {
+        append_log(L"[실패] 대상 입력칸에 포커스를 설정하지 못했습니다.\r\n");
+        return;
+    }
 
-    if (GetForegroundWindow() != target || !send_character(L'@')) return;
+    if (GetForegroundWindow() != target || !send_character(L'@')) goto failed;
     Sleep(150);  /* Allow KakaoTalk to process @ / mention UI. */
-    if (GetForegroundWindow() != target || !send_enter()) return;
+    if (GetForegroundWindow() != target || !send_enter()) goto failed;
     Sleep(150);  /* Allow KakaoTalk to process Enter before further typing. */
-    if (GetForegroundWindow() != target) return;
+    if (GetForegroundWindow() != target) goto failed;
     while (*suffix) {
-        if (GetForegroundWindow() != target || !send_character(*suffix)) return;
+        if (GetForegroundWindow() != target || !send_character(*suffix)) goto failed;
         ++suffix;
     }
+    append_log(L"[성공] 지정 키 입력을 완료했습니다.\r\n");
+    return;
+
+failed:
+    append_log(L"[실패] 지정 키 입력 중 대상 포커스가 변경되어 중단했습니다.\r\n");
 }
 
 static BOOL type_text_to_chat(HWND target, const wchar_t *text) {
@@ -488,15 +548,40 @@ static void type_message_to_selected_rooms(void) {
     LRESULT count;
     LRESULT index;
     HWND target;
+    wchar_t title[512];
     if (!message_edit || !selected_listbox) return;
-    if (!GetWindowTextW(message_edit, prepared_text, 4096)) return;
-    count = SendMessageW(selected_listbox, LB_GETCOUNT, 0, 0);
-    if (count == LB_ERR || count <= 0) return;
-    for (index = 0; index < count; ++index) {
-        target = chat_window_at(selected_listbox, index);
-        if (!target || !type_text_to_chat(target, prepared_text)) return;
-        if (index + 1 < count) Sleep(1500);
+    if (!GetWindowTextW(message_edit, prepared_text, 4096)) {
+        append_log(L"[중단] 입력 내용이 비어 있습니다.\r\n");
+        return;
     }
+    count = SendMessageW(selected_listbox, LB_GETCOUNT, 0, 0);
+    if (count == LB_ERR || count <= 0) {
+        append_log(L"[중단] 선택된 오픈톡방이 없습니다.\r\n");
+        return;
+    }
+    append_log(L"[시작] 선택된 오픈톡방 목록 입력을 시작합니다.\r\n");
+    for (index = 0; index < count; ++index) {
+        title[0] = 0;
+        SendMessageW(selected_listbox, LB_GETTEXT, (WPARAM)index, (LPARAM)title);
+        append_log(L"[진행] ");
+        append_log(title);
+        append_log(L": 입력 중...\r\n");
+        target = chat_window_at(selected_listbox, index);
+        if (!target || !type_text_to_chat(target, prepared_text)) {
+            append_log(L"[실패] ");
+            append_log(title);
+            append_log(L": 대상 또는 포커스를 확인할 수 없어 중단했습니다.\r\n");
+            return;
+        }
+        append_log(L"[성공] ");
+        append_log(title);
+        append_log(L": 입력 완료.\r\n");
+        if (index + 1 < count) {
+            append_log(L"[대기] 다음 방까지 1500ms 대기합니다.\r\n");
+            Sleep(1500);
+        }
+    }
+    append_log(L"[완료] 선택된 모든 방의 입력을 완료했습니다.\r\n");
 }
 
 static void set_default_font(HWND control) {
@@ -576,6 +661,19 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
             0, 0, 150, 30,
             hwnd, (HANDLE)0, instance, (void *)0
         );
+        log_label = CreateWindowExW(
+            0, L"STATIC", L"진행 로그",
+            WS_CHILD | WS_VISIBLE,
+            0, 0, 100, 20,
+            hwnd, (HANDLE)0, instance, (void *)0
+        );
+        log_edit = CreateWindowExW(
+            0, L"EDIT", L"",
+            WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_BORDER |
+                ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY,
+            0, 0, 100, 100,
+            hwnd, (HANDLE)0, instance, (void *)0
+        );
         if (listbox) {
             EnumWindows(collect_window, (LPARAM)listbox);
         }
@@ -592,6 +690,9 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
         set_default_font(input_label);
         set_default_font(message_edit);
         set_default_font(message_button);
+        set_default_font(log_label);
+        set_default_font(log_edit);
+        append_log(L"[준비] 카카오톡 대화창 검색을 완료했습니다.\r\n");
         layout_controls(hwnd);
         return 0;
     }
@@ -656,7 +757,7 @@ void app_entry(void) {
     hwnd = CreateWindowExW(
         0, wc.lpszClassName, L"카카오톡 대화창 목록",
         WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-        (int)0x80000000u, (int)0x80000000u, 820, 560,
+        (int)0x80000000u, (int)0x80000000u, 820, 700,
         (HWND)0, (HANDLE)0, instance, (void *)0
     );
     if (!hwnd) ExitProcess(1);
