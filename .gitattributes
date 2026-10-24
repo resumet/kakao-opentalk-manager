@@ -1,3 +1,7 @@
+.gitattributes text eol=lf
 *.c text eol=lf
 *.md text eol=lf
+*.rc text eol=lf
+*.txt text eol=lf
 *.exe binary
+*.ttf binary

@@ -20,6 +20,7 @@ typedef HANDLE HCURSOR;
 typedef HANDLE HBRUSH;
 typedef HANDLE HDC;
 typedef HANDLE HFONT;
+typedef HANDLE HRSRC;
 typedef const wchar_t *LPCWSTR;
 typedef wchar_t *LPWSTR;
 typedef unsigned int UINT;
@@ -128,6 +129,10 @@ __declspec(dllimport) void *GlobalLock(HGLOBAL);
 __declspec(dllimport) BOOL GlobalUnlock(HGLOBAL);
 __declspec(dllimport) unsigned long long GlobalSize(HGLOBAL);
 __declspec(dllimport) HGLOBAL GlobalFree(HGLOBAL);
+__declspec(dllimport) HRSRC FindResourceW(HINSTANCE, LPCWSTR, LPCWSTR);
+__declspec(dllimport) HGLOBAL LoadResource(HINSTANCE, HRSRC);
+__declspec(dllimport) void *LockResource(HGLOBAL);
+__declspec(dllimport) DWORD SizeofResource(HINSTANCE, HRSRC);
 __declspec(dllimport) unsigned short RegisterClassW(const WNDCLASSW *);
 __declspec(dllimport) HWND CreateWindowExW(DWORD, LPCWSTR, LPCWSTR, DWORD, int, int, int, int, HWND, HANDLE, HINSTANCE, void *);
 __declspec(dllimport) LRESULT DefWindowProcW(HWND, UINT, WPARAM, LPARAM);
@@ -181,6 +186,8 @@ __declspec(dllimport) int SetBkMode(HDC, int);
 __declspec(dllimport) DWORD SetBkColor(HDC, DWORD);
 __declspec(dllimport) DWORD SetTextColor(HDC, DWORD);
 __declspec(dllimport) BOOL RoundRect(HDC, int, int, int, int, int, int);
+__declspec(dllimport) HANDLE AddFontMemResourceEx(void *, DWORD, void *, DWORD *);
+__declspec(dllimport) BOOL RemoveFontMemResourceEx(HANDLE);
 __declspec(dllimport) int StretchDIBits(HDC, int, int, int, int, int, int, int, int, const void *, const void *, UINT, DWORD);
 
 #define WS_OVERLAPPEDWINDOW   0x00CF0000u
@@ -191,12 +198,14 @@ __declspec(dllimport) int StretchDIBits(HDC, int, int, int, int, int, int, int, 
 #define WS_BORDER             0x00800000u
 #define BS_GROUPBOX           0x0007u
 #define BS_OWNERDRAW          0x000Bu
+#define BS_AUTOCHECKBOX       0x0003u
 #define SS_CENTER             0x0001u
 #define SS_CENTERIMAGE        0x0200u
 #define ES_MULTILINE          0x0004u
 #define ES_AUTOVSCROLL        0x0040u
 #define ES_AUTOHSCROLL        0x0080u
 #define ES_READONLY           0x0800u
+#define ES_WANTRETURN         0x1000u
 #define LBS_NOTIFY            0x0001u
 #define LBS_NOINTEGRALHEIGHT  0x0100u
 #define WM_CREATE             0x0001u
@@ -217,6 +226,7 @@ __declspec(dllimport) int StretchDIBits(HDC, int, int, int, int, int, int, int, 
 #define EM_REPLACESEL         0x00C2u
 #define EM_SETREADONLY        0x00CFu
 #define EM_SCROLLCARET        0x00B7u
+#define BM_GETCHECK           0x00F0u
 #define LB_ADDSTRING          0x0180u
 #define LB_DELETESTRING       0x0182u
 #define LB_SETCURSEL          0x0186u
@@ -228,6 +238,7 @@ __declspec(dllimport) int StretchDIBits(HDC, int, int, int, int, int, int, int, 
 #define LB_ERR                (-1)
 #define LB_ERRSPACE           (-2)
 #define LBN_SELCHANGE         1u
+#define BST_CHECKED           1u
 #define SW_RESTORE            9
 #define GW_OWNER              4u
 #define INPUT_MOUSE           0u
@@ -237,6 +248,7 @@ __declspec(dllimport) int StretchDIBits(HDC, int, int, int, int, int, int, int, 
 #define KEYEVENTF_KEYUP       0x0002u
 #define KEYEVENTF_UNICODE     0x0004u
 #define VK_RETURN             0x0Du
+#define VK_SHIFT              0x10u
 #define VK_CONTROL            0x11u
 #define VK_V                  0x56u
 #define COLOR_WINDOW          5u
@@ -264,6 +276,9 @@ __declspec(dllimport) int StretchDIBits(HDC, int, int, int, int, int, int, int, 
 #define FW_SEMIBOLD           600
 #define DEFAULT_CHARSET       1u
 #define CLEARTYPE_QUALITY     5u
+#define RT_RCDATA             10u
+#define IDR_PRETENDARD_REGULAR_FONT  101u
+#define IDR_PRETENDARD_SEMIBOLD_FONT 102u
 #define RGB_COLOR(r, g, b)    ((DWORD)((BYTE)(r) | ((DWORD)(BYTE)(g) << 8) | ((DWORD)(BYTE)(b) << 16)))
 
 static HWND listbox;
@@ -277,6 +292,7 @@ static HWND remove_button;
 static HWND focus_button;
 static HWND keys_button;
 static HWND message_edit;
+static HWND mention_all_checkbox;
 static HWND message_button;
 static HWND settings_group;
 static HWND image_label;
@@ -294,6 +310,8 @@ static HBRUSH app_background_brush;
 static HBRUSH surface_brush;
 static HFONT app_font;
 static HFONT section_font;
+static HANDLE private_regular_font_handle;
+static HANDLE private_semibold_font_handle;
 
 static int maximum(int a, int b) { return a > b ? a : b; }
 
@@ -711,10 +729,16 @@ static void layout_controls(HWND hwnd) {
         MoveWindow(input_label, settings_x + 15, 238, maximum(0, settings_width - 30), 20, 1);
     }
     if (message_edit) {
-        MoveWindow(message_edit, settings_x + 15, 262, maximum(0, settings_width - 30), 30, 1);
+        MoveWindow(message_edit, settings_x + 15, 262, maximum(0, settings_width - 30), 90, 1);
+    }
+    if (mention_all_checkbox) {
+        MoveWindow(
+            mention_all_checkbox,
+            settings_x + 15, 360, maximum(0, settings_width - 30), 26, 1
+        );
     }
     if (message_button) {
-        MoveWindow(message_button, settings_x + 15, 302, maximum(0, settings_width - 30), 34, 1);
+        MoveWindow(message_button, settings_x + 15, 394, maximum(0, settings_width - 30), 36, 1);
     }
     if (log_label) {
         MoveWindow(log_label, 10, log_label_y, maximum(0, width - 20), 20, 1);
@@ -901,6 +925,30 @@ static BOOL send_enter(void) {
     return SendInput(2, events, (int)sizeof(INPUT)) == 2;
 }
 
+static BOOL send_shift_enter(void) {
+    INPUT events[4] = {0};
+    INPUT release_keys[2] = {0};
+    UINT sent;
+    events[0].type = INPUT_KEYBOARD;
+    events[0].data.ki.wVk = VK_SHIFT;
+    events[1].type = INPUT_KEYBOARD;
+    events[1].data.ki.wVk = VK_RETURN;
+    events[2] = events[1];
+    events[2].data.ki.dwFlags = KEYEVENTF_KEYUP;
+    events[3] = events[0];
+    events[3].data.ki.dwFlags = KEYEVENTF_KEYUP;
+    sent = SendInput(4, events, (int)sizeof(INPUT));
+    if (sent == 4) return 1;
+    release_keys[0].type = INPUT_KEYBOARD;
+    release_keys[0].data.ki.wVk = VK_RETURN;
+    release_keys[0].data.ki.dwFlags = KEYEVENTF_KEYUP;
+    release_keys[1].type = INPUT_KEYBOARD;
+    release_keys[1].data.ki.wVk = VK_SHIFT;
+    release_keys[1].data.ki.dwFlags = KEYEVENTF_KEYUP;
+    SendInput(2, release_keys, (int)sizeof(INPUT));
+    return 0;
+}
+
 static BOOL send_paste(void) {
     INPUT events[4] = {0};
     INPUT release_control = {0};
@@ -953,7 +1001,7 @@ failed:
     append_log(L"[실패] 지정 키 입력 중 대상 포커스가 변경되어 중단했습니다.\r\n");
 }
 
-static BOOL type_content_to_chat(HWND target, const wchar_t *text) {
+static BOOL type_content_to_chat(HWND target, const wchar_t *text, BOOL mention_all) {
     if (!target) return 0;
     if (stored_image && !publish_stored_image()) {
         append_log(L"[실패] 저장된 이미지를 클립보드에 복사하지 못했습니다.\r\n");
@@ -973,12 +1021,25 @@ static BOOL type_content_to_chat(HWND target, const wchar_t *text) {
         }
         append_log(L"[성공] 클립보드 이미지 전송 오버레이의 전송 영역을 눌렀습니다.\r\n");
         Sleep(1000);
-        if (*text && !focus_chat_input(target)) {
+        if ((*text || mention_all) && !focus_chat_input(target)) {
             append_log(L"[실패] 이미지 전송 후 메시지 입력칸에 포커스를 설정하지 못했습니다.\r\n");
             return 0;
         }
     }
+    if (mention_all) {
+        if (GetForegroundWindow() != target || !send_character(L'@')) return 0;
+        Sleep(500);
+        if (GetForegroundWindow() != target || !send_enter()) return 0;
+        Sleep(500);
+        append_log(L"[진행] 모두를 멘션하기 입력을 적용했습니다.\r\n");
+    }
     while (*text) {
+        if (*text == L'\r' || *text == L'\n') {
+            if (*text == L'\r' && text[1] == L'\n') ++text;
+            if (GetForegroundWindow() != target || !send_shift_enter()) return 0;
+            ++text;
+            continue;
+        }
         if (GetForegroundWindow() != target || !send_character(*text)) return 0;
         ++text;
     }
@@ -992,12 +1053,15 @@ static void type_message_to_selected_rooms(void) {
     LRESULT count;
     LRESULT index;
     HWND target;
+    BOOL mention_all;
     wchar_t title[512];
     if (!message_edit || !selected_listbox) return;
     prepared_text[0] = 0;
     GetWindowTextW(message_edit, prepared_text, 4096);
-    if (!prepared_text[0] && !stored_image) {
-        append_log(L"[중단] 이미지와 메시지가 모두 비어 있습니다.\r\n");
+    mention_all = mention_all_checkbox &&
+        SendMessageW(mention_all_checkbox, BM_GETCHECK, 0, 0) == BST_CHECKED;
+    if (!prepared_text[0] && !stored_image && !mention_all) {
+        append_log(L"[중단] 이미지, 메시지와 모두를 멘션하기가 비어 있습니다.\r\n");
         return;
     }
     count = SendMessageW(selected_listbox, LB_GETCOUNT, 0, 0);
@@ -1013,7 +1077,7 @@ static void type_message_to_selected_rooms(void) {
         append_log(title);
         append_log(L": 설정 내용을 적용 중...\r\n");
         target = chat_window_at(selected_listbox, index);
-        if (!target || !type_content_to_chat(target, prepared_text)) {
+        if (!target || !type_content_to_chat(target, prepared_text, mention_all)) {
             append_log(L"[실패] ");
             append_log(title);
             append_log(L": 대상 또는 포커스를 확인할 수 없어 중단했습니다.\r\n");
@@ -1184,8 +1248,15 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
         );
         message_edit = CreateWindowExW(
             0, L"EDIT", L"",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL,
-            0, 0, 100, 30,
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | WS_BORDER |
+                ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN,
+            0, 0, 100, 90,
+            hwnd, (HANDLE)0, instance, (void *)0
+        );
+        mention_all_checkbox = CreateWindowExW(
+            0, L"BUTTON", L"모두를 멘션하기",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+            0, 0, 150, 26,
             hwnd, (HANDLE)0, instance, (void *)0
         );
         message_button = CreateWindowExW(
@@ -1228,6 +1299,7 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
         set_control_font(image_clear_button, app_font);
         set_control_font(input_label, section_font);
         set_control_font(message_edit, app_font);
+        set_control_font(mention_all_checkbox, app_font);
         set_control_font(message_button, app_font);
         set_control_font(log_label, section_font);
         set_control_font(log_edit, app_font);
@@ -1313,10 +1385,14 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
         clear_stored_image(0);
         if (section_font && section_font != app_font) DeleteObject(section_font);
         if (app_font && app_font != GetStockObject(DEFAULT_GUI_FONT)) DeleteObject(app_font);
+        if (private_semibold_font_handle) RemoveFontMemResourceEx(private_semibold_font_handle);
+        if (private_regular_font_handle) RemoveFontMemResourceEx(private_regular_font_handle);
         if (surface_brush) DeleteObject(surface_brush);
         if (app_background_brush) DeleteObject(app_background_brush);
         section_font = (HFONT)0;
         app_font = (HFONT)0;
+        private_semibold_font_handle = (HANDLE)0;
+        private_regular_font_handle = (HANDLE)0;
         surface_brush = (HBRUSH)0;
         app_background_brush = (HBRUSH)0;
         PostQuitMessage(0);
@@ -1331,16 +1407,59 @@ void app_entry(void) {
     WNDCLASSW preview_class;
     HWND hwnd;
     MSG msg;
+    HRSRC regular_font_resource;
+    HRSRC semibold_font_resource;
+    HGLOBAL regular_font_resource_data;
+    HGLOBAL semibold_font_resource_data;
+    void *regular_font_bytes;
+    void *semibold_font_bytes;
+    DWORD regular_font_size;
+    DWORD semibold_font_size;
+    DWORD font_count = 0;
+    LPCWSTR font_face;
+
+    regular_font_resource = FindResourceW(
+        instance,
+        (LPCWSTR)(unsigned long long)IDR_PRETENDARD_REGULAR_FONT,
+        (LPCWSTR)(unsigned long long)RT_RCDATA
+    );
+    semibold_font_resource = FindResourceW(
+        instance,
+        (LPCWSTR)(unsigned long long)IDR_PRETENDARD_SEMIBOLD_FONT,
+        (LPCWSTR)(unsigned long long)RT_RCDATA
+    );
+    regular_font_resource_data = regular_font_resource ?
+        LoadResource(instance, regular_font_resource) : (HGLOBAL)0;
+    semibold_font_resource_data = semibold_font_resource ?
+        LoadResource(instance, semibold_font_resource) : (HGLOBAL)0;
+    regular_font_bytes = regular_font_resource_data ?
+        LockResource(regular_font_resource_data) : (void *)0;
+    semibold_font_bytes = semibold_font_resource_data ?
+        LockResource(semibold_font_resource_data) : (void *)0;
+    regular_font_size = regular_font_resource ? SizeofResource(instance, regular_font_resource) : 0;
+    semibold_font_size = semibold_font_resource ? SizeofResource(instance, semibold_font_resource) : 0;
+    if (regular_font_bytes && regular_font_size) {
+        private_regular_font_handle = AddFontMemResourceEx(
+            regular_font_bytes, regular_font_size, (void *)0, &font_count
+        );
+    }
+    font_count = 0;
+    if (semibold_font_bytes && semibold_font_size) {
+        private_semibold_font_handle = AddFontMemResourceEx(
+            semibold_font_bytes, semibold_font_size, (void *)0, &font_count
+        );
+    }
+    font_face = private_regular_font_handle ? L"Pretendard" : L"Segoe UI";
 
     app_background_brush = CreateSolidBrush(RGB_COLOR(245, 247, 250));
     surface_brush = CreateSolidBrush(RGB_COLOR(255, 255, 255));
     app_font = CreateFontW(
         -17, 0, 0, 0, FW_NORMAL, 0, 0, 0,
-        DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI"
+        DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, font_face
     );
     section_font = CreateFontW(
         -17, 0, 0, 0, FW_SEMIBOLD, 0, 0, 0,
-        DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI"
+        DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, font_face
     );
     if (!app_font) app_font = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
     if (!section_font) section_font = app_font;
