@@ -340,30 +340,52 @@ static BOOL focus_chat_input(HWND chat) {
     InputCandidate candidate = {0, 0};
     DWORD gui_thread;
     DWORD editor_thread;
-    BOOL attached;
-    BOOL focused;
+    DWORD foreground_thread = 0;
+    HWND foreground;
+    BOOL attached_foreground = 0;
+    BOOL attached_editor = 0;
+    BOOL foreground_set;
+    BOOL focused = 0;
 
     if (!IsWindow(chat) || !looks_like_chat_window(chat)) return 0;
     if (IsIconic(chat)) ShowWindow(chat, SW_RESTORE);
-    SetForegroundWindow(chat);
-    if (GetForegroundWindow() != chat) return 0;
-
     EnumChildWindows(chat, find_input_child, (LPARAM)&candidate);
     if (!candidate.editor || !IsWindow(candidate.editor)) return 0;
     editor_thread = GetWindowThreadProcessId(candidate.editor, (DWORD *)0);
     gui_thread = GetCurrentThreadId();
     if (!editor_thread) return 0;
-    if (gui_thread == editor_thread) {
-        SetFocus(candidate.editor);
-        return GetFocus() == candidate.editor && GetForegroundWindow() == chat;
+
+    /* After typing into the first room, that KakaoTalk window owns the
+     * foreground input queue. Join it before activating the next room so
+     * Windows does not reject the second SetForegroundWindow request. */
+    foreground = GetForegroundWindow();
+    if (foreground) {
+        foreground_thread = GetWindowThreadProcessId(foreground, (DWORD *)0);
+    }
+    if (foreground_thread && foreground_thread != gui_thread) {
+        attached_foreground = AttachThreadInput(gui_thread, foreground_thread, 1);
+        if (!attached_foreground) return 0;
+    }
+    if (editor_thread != gui_thread && editor_thread != foreground_thread) {
+        attached_editor = AttachThreadInput(gui_thread, editor_thread, 1);
+        if (!attached_editor) {
+            if (attached_foreground) {
+                AttachThreadInput(gui_thread, foreground_thread, 0);
+            }
+            return 0;
+        }
     }
 
-    attached = AttachThreadInput(gui_thread, editor_thread, 1);
-    if (!attached) return 0;
-    SetFocus(candidate.editor);
-    focused = GetFocus() == candidate.editor;
-    AttachThreadInput(gui_thread, editor_thread, 0);
-    return focused && GetForegroundWindow() == chat;
+    SetForegroundWindow(chat);
+    foreground_set = GetForegroundWindow() == chat;
+    if (foreground_set) {
+        SetFocus(candidate.editor);
+        focused = GetFocus() == candidate.editor;
+    }
+
+    if (attached_editor) AttachThreadInput(gui_thread, editor_thread, 0);
+    if (attached_foreground) AttachThreadInput(gui_thread, foreground_thread, 0);
+    return foreground_set && focused && GetForegroundWindow() == chat;
 }
 
 static HWND chat_window_at(HWND room_list, LRESULT index) {

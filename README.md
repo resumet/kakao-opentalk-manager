@@ -1,6 +1,6 @@
 # 카카오톡 대화창 MVP — Codex 개발 인수인계 (기준선: v5)
 
-> **현재 구현 버전: v8 (기준선 v5), 배포 버전: v1.1.** v6의 오픈채팅 전용 필터는 실제 환경에서 대화방이 전혀 표시되지 않아 **폐기**했습니다. v8은 v7의 선택 목록 순회 시 방 사이 대기를 1500ms로 조정한 버전입니다.
+> **현재 구현 버전: v9 (기준선 v5), 배포 버전: v1.2.** v6의 오픈채팅 전용 필터는 실제 환경에서 대화방이 전혀 표시되지 않아 **폐기**했습니다. v9는 첫 방 입력 후 두 번째 방으로 전환할 때 전경 창의 입력 스레드를 먼저 연결하도록 포커스 획득 절차를 수정한 버전입니다.
 >
 > 이 문서는 기존 구현을 유지하면서 **Windows + Visual Studio Code + Codex**에서 개발을 계속하기 위한 설명서입니다. 새 기능을 선제적으로 추가하라는 요청이 아닙니다.
 
@@ -54,7 +54,8 @@
 | **v5** | **[지정 키 입력] 버튼, `@` → `Enter` → `가나다`** | **현재 기준 버전** |
 | v6 | 오픈채팅 전용 탐지/필터 | **실제 오픈채팅이 전혀 보이지 않아 철회, v5로 롤백** |
 | v7 | 수동 선택 목록, 양방향 방 이동, 선택 목록 순회 문구 입력 | v8에 계승 |
-| **v8** | **선택 목록 순회 시 한 방 입력 후 다음 방까지 대기를 1500ms로 변경** | **현재 구현 버전** |
+| v8 | 선택 목록 순회 시 한 방 입력 후 다음 방까지 대기를 1500ms로 변경 | v9에 계승 |
+| **v9** | **현재 전경 창과 대상 입력칸의 입력 스레드를 연결한 뒤 다음 방을 활성화하도록 순회 포커스 수정** | **현재 구현 버전** |
 
 **롤백 결정:** 오픈채팅 여부를 신뢰성 있게 판별하는 카카오톡 전용 API/속성을 확보하지 못한 채 필터를 적용한 것이 문제였습니다. 현재 프로젝트에는 v6 필터를 포함하지 않았습니다. 오픈채팅 판별을 재추진하려면 카카오톡 실제 설치 버전에서 일반 채팅과 오픈채팅의 창/UI 구조를 비교하는 **실측 근거**가 먼저 필요합니다.
 
@@ -95,10 +96,24 @@
 - 실제 카카오톡 테스트 대화방을 이용한 1500ms 순회 입력은 **미검증**.
 - 코드 서명은 적용하지 않음.
 
+### 2026-10-24 v9 / 배포 v1.2 변경 및 빌드 기록
+
+- 첫 번째 방 입력 후 프로그램이 전경 소유권을 잃은 상태에서 다음 방에 `SetForegroundWindow()`를 먼저 호출하여 순회가 중단될 수 있던 순서를 수정함.
+- `focus_chat_input()`이 현재 전경 창 스레드와 대상 RichEdit 스레드를 먼저 확인하고, 필요한 입력 큐를 `AttachThreadInput()`으로 연결한 상태에서 대상 창 활성화와 입력칸 포커스를 설정·검증하도록 변경함.
+- 입력 큐 연결은 성공한 항목만 역순으로 해제하며, 연결·전경·포커스 검증 중 하나라도 실패하면 기존 안전 동작대로 입력을 중단함.
+- UI, 고정 키 입력 순서, 순회 문구, 자동 발송 여부 및 방 사이 1500ms 대기는 변경하지 않음.
+- LLVM 23.1.4 `clang-cl` + `lld-link`로 `KakoMVP-v1.2.exe` Windows x64 standalone 빌드 성공.
+- PE 검사 결과 `IMAGE_FILE_MACHINE_AMD64`, Windows GUI이며 import DLL은 `KERNEL32.dll`, `USER32.dll`, `GDI32.dll`만 확인됨.
+- 실행 파일 SHA-256: `1b4506c8f11ac4e21fbef3ca4f8ee74acbe8b787e29c129a32a928ba00820237`
+- 시작 점검: 프로세스가 2초 이상 유지되고 메인 창 핸들이 생성됨을 확인.
+- 합성 테스트: 실제 `focus_chat_input()`을 포함한 테스트 실행 파일에서 별도 UI 스레드의 테스트 대화창 2개를 순서대로 활성화하여 첫 입력칸 `A`, 두 번째 입력칸 `B` 입력 성공을 확인함.
+- 실제 카카오톡 테스트 대화방을 이용한 2개 방 연속 입력은 **미검증**.
+- 코드 서명은 적용하지 않음.
+
 ### 배포 실행 파일 버전 규칙
 
-- 현재 배포 파일: `KakoMVP-v1.1.exe`
-- 구현 이력 버전(v8)과 사용자 배포 파일 버전(v1.1)은 별도로 관리함.
+- 현재 배포 파일: `KakoMVP-v1.2.exe`
+- 구현 이력 버전(v9)과 사용자 배포 파일 버전(v1.2)은 별도로 관리함.
 - 수정점이 발생하는 각 작업마다 배포 버전을 올리고 `KakoMVP-v<배포 버전>.exe` 형식의 실행 파일과 SHA-256을 README에 기록함.
 
 ### Git 버전 관리
@@ -112,13 +127,13 @@
 ```text
 KakaoMVP_v5_Codex/
 ├── .gitattributes # C/Markdown LF 및 EXE 바이너리 취급 고정
-├── main.c       # v5 기준선에 승인된 v8 기능을 반영한 C 소스
-├── KakoMVP-v1.1.exe # v8 Windows x64 standalone 실행 파일(배포 v1.1)
+├── main.c       # v5 기준선에 승인된 v9 기능을 반영한 C 소스
+├── KakoMVP-v1.2.exe # v9 Windows x64 standalone 실행 파일(배포 v1.2)
 ├── README.md    # 구현 이력, 빌드·검증·제약사항
 └── AGENTS.md    # Codex가 자동으로 읽을 수 있는 개발 규칙
 ```
 
-이 폴더는 소스 중심 작업 폴더이며, 현재는 요청에 따라 빌드한 `KakoMVP-v1.1.exe`도 함께 포함합니다.
+이 폴더는 소스 중심 작업 폴더이며, 현재는 요청에 따라 빌드한 `KakoMVP-v1.2.exe`도 함께 포함합니다.
 
 ## 5. 현재 소스 구조 (`main.c`)
 
@@ -140,7 +155,7 @@ KakaoMVP_v5_Codex/
 
 - `selected_chat_window()`: 현재 선택된 목록 항목의 HWND를 꺼내고 아직 유효한 카카오톡 대화창인지 재검증.
 - `find_input_child(hwnd, ...)`: 표시 중·사용 가능한 `RichEdit*` 자식 컨트롤 중 **화면상 가장 아래쪽** 후보 선택. 메시지 입력칸이라고 추정하는 휴리스틱이며 100% 보장 아님.
-- `focus_chat_input(hwnd)`: 최소화되어 있으면 `SW_RESTORE`, `SetForegroundWindow`, `EnumChildWindows`로 입력칸 탐색, 필요 시 `AttachThreadInput`, `SetFocus`, `GetFocus`로 포커스 설정 및 확인.
+- `focus_chat_input(hwnd)`: 최소화되어 있으면 `SW_RESTORE`하고 입력칸을 탐색한 뒤, 현재 전경 창과 대상 RichEdit의 입력 스레드를 필요한 범위에서 `AttachThreadInput`으로 연결. 연결 상태에서 `SetForegroundWindow`, `SetFocus`, `GetFocus`로 전경·포커스를 설정 및 확인하고 연결을 해제함.
 - `focus_selected_window()`: [포커스 이동] 버튼의 진입 함수.
 
 ### 키 시퀀스
@@ -163,7 +178,7 @@ KakaoMVP_v5_Codex/
 ### MSVC 빌드 명령 예시 (Windows x64)
 
 ```bat
-cl /nologo /O2 /GS- /Zl /utf-8 /TC main.c /link /SUBSYSTEM:WINDOWS /ENTRY:app_entry /NODEFAULTLIB /OUT:KakoMVP-v1.1.exe kernel32.lib user32.lib gdi32.lib
+cl /nologo /O2 /GS- /Zl /utf-8 /TC main.c /link /SUBSYSTEM:WINDOWS /ENTRY:app_entry /NODEFAULTLIB /OUT:KakoMVP-v1.2.exe kernel32.lib user32.lib gdi32.lib
 ```
 
 - `cl`: Microsoft C/C++ 컴파일러. `where cl`로 사용 가능 여부 확인.
@@ -232,5 +247,5 @@ cl /nologo /O2 /GS- /Zl /utf-8 /TC main.c /link /SUBSYSTEM:WINDOWS /ENTRY:app_en
 - 기준선 `main.c`: **v5 롤백 ZIP 내부 원본과 바이트 단위 동일한 파일**
 - 원본 SHA-256: `ffb628b6c0cebc398baaecd63efe8355b20a53bd24465cd1315bc067f40cf273`
 - 기존 v5 EXE SHA-256: `7a74da6d2cc680f26eab8f2a20fadbe564c821534be01f8c08b4dccb4d806ce8`
-- 현재 `KakoMVP-v1.1.exe` SHA-256: `3aaa6d7e5fd838298c967f6077bb5674cd3da3afcd0248f3c08178759ae88a7c`
+- 현재 `KakoMVP-v1.2.exe` SHA-256: `1b4506c8f11ac4e21fbef3ca4f8ee74acbe8b787e29c129a32a928ba00820237`
 - 작업 시점: 2026-10-24
