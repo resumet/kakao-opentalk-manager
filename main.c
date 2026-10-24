@@ -292,6 +292,7 @@ static HWND add_button;
 static HWND remove_button;
 static HWND message_edit;
 static HWND mention_all_checkbox;
+static HWND send_message_checkbox;
 static HWND timing_button;
 static HWND message_button;
 static HWND settings_group;
@@ -745,11 +746,17 @@ static void layout_controls(HWND hwnd) {
             settings_x + 15, 360, maximum(0, settings_width - 30), 26, 1
         );
     }
+    if (send_message_checkbox) {
+        MoveWindow(
+            send_message_checkbox,
+            settings_x + 15, 388, maximum(0, settings_width - 30), 26, 1
+        );
+    }
     if (timing_button) {
-        MoveWindow(timing_button, settings_x + 15, 394, maximum(0, settings_width - 30), 32, 1);
+        MoveWindow(timing_button, settings_x + 15, 422, maximum(0, settings_width - 30), 32, 1);
     }
     if (message_button) {
-        MoveWindow(message_button, settings_x + 15, 434, maximum(0, settings_width - 30), 36, 1);
+        MoveWindow(message_button, settings_x + 15, 462, maximum(0, settings_width - 30), 36, 1);
     }
     if (log_label) {
         MoveWindow(log_label, 10, log_label_y, maximum(0, width - 20), 20, 1);
@@ -959,7 +966,13 @@ static BOOL send_paste(void) {
     return 0;
 }
 
-static BOOL type_content_to_chat(HWND target, const wchar_t *text, BOOL mention_all) {
+static BOOL type_content_to_chat(
+    HWND target,
+    const wchar_t *text,
+    BOOL mention_all,
+    BOOL complete_message
+) {
+    BOOL has_text = text && *text;
     if (!target) return 0;
     if (stored_image && !publish_stored_image()) {
         append_log(L"[실패] 저장된 이미지를 클립보드에 복사하지 못했습니다.\r\n");
@@ -1001,23 +1014,30 @@ static BOOL type_content_to_chat(HWND target, const wchar_t *text, BOOL mention_
         if (GetForegroundWindow() != target || !send_character(*text)) return 0;
         ++text;
     }
+    if (complete_message && has_text) {
+        if (GetForegroundWindow() != target || !send_enter()) return 0;
+        append_log(L"[진행] 메시지 전송을 완료했습니다.\r\n");
+    }
     return 1;
 }
 
 /* Apply the prepared image and text to every manually selected room in list
  * order. A stored image is pasted and its confirmation button is clicked before the text is
- * typed. No Enter is appended after the text. */
+ * typed. When requested, one Enter is appended after non-empty text. */
 static void type_message_to_selected_rooms(void) {
     LRESULT count;
     LRESULT index;
     HWND target;
     BOOL mention_all;
+    BOOL complete_message;
     wchar_t title[512];
     if (!message_edit || !selected_listbox) return;
     prepared_text[0] = 0;
     GetWindowTextW(message_edit, prepared_text, 4096);
     mention_all = mention_all_checkbox &&
         SendMessageW(mention_all_checkbox, BM_GETCHECK, 0, 0) == BST_CHECKED;
+    complete_message = send_message_checkbox &&
+        SendMessageW(send_message_checkbox, BM_GETCHECK, 0, 0) == BST_CHECKED;
     if (!prepared_text[0] && !stored_image && !mention_all) {
         append_log(L"[중단] 이미지, 메시지와 모두를 멘션하기가 비어 있습니다.\r\n");
         return;
@@ -1035,7 +1055,9 @@ static void type_message_to_selected_rooms(void) {
         append_log(title);
         append_log(L": 설정 내용을 적용 중...\r\n");
         target = chat_window_at(selected_listbox, index);
-        if (!target || !type_content_to_chat(target, prepared_text, mention_all)) {
+        if (!target || !type_content_to_chat(
+                target, prepared_text, mention_all, complete_message
+            )) {
             append_log(L"[실패] ");
             append_log(title);
             append_log(L": 대상 또는 포커스를 확인할 수 없어 중단했습니다.\r\n");
@@ -1376,6 +1398,12 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
             0, 0, 150, 26,
             hwnd, (HANDLE)0, instance, (void *)0
         );
+        send_message_checkbox = CreateWindowExW(
+            0, L"BUTTON", L"메시지 전송완료하기",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+            0, 0, 180, 26,
+            hwnd, (HANDLE)0, instance, (void *)0
+        );
         timing_button = CreateWindowExW(
             0, L"BUTTON", L"시간 설정",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
@@ -1420,6 +1448,7 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
         set_control_font(input_label, section_font);
         set_control_font(message_edit, app_font);
         set_control_font(mention_all_checkbox, app_font);
+        set_control_font(send_message_checkbox, app_font);
         set_control_font(timing_button, app_font);
         set_control_font(message_button, app_font);
         set_control_font(log_label, section_font);
