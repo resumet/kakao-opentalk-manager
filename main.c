@@ -172,6 +172,8 @@ __declspec(dllimport) int StretchDIBits(HDC, int, int, int, int, int, int, int, 
 #define WM_SETTEXT            0x000Cu
 #define WM_COMMAND            0x0111u
 #define WM_SETFONT            0x0030u
+#define WM_LBUTTONDOWN        0x0201u
+#define WM_LBUTTONUP          0x0202u
 #define EM_SETLIMITTEXT       0x00C5u
 #define EM_SETSEL             0x00B1u
 #define EM_REPLACESEL         0x00C2u
@@ -188,6 +190,8 @@ __declspec(dllimport) int StretchDIBits(HDC, int, int, int, int, int, int, int, 
 #define LB_ERR                (-1)
 #define LB_ERRSPACE           (-2)
 #define LBN_SELCHANGE         1u
+#define BM_CLICK              0x00F5u
+#define MK_LBUTTON            0x0001u
 #define SW_RESTORE            9
 #define INPUT_KEYBOARD        1u
 #define KEYEVENTF_KEYUP       0x0002u
@@ -457,6 +461,82 @@ static BOOL prefix_ignore_ascii_case(const wchar_t *s, const wchar_t *prefix) {
         ++prefix;
     }
     return 1;
+}
+
+typedef struct {
+    DWORD process_id;
+    HWND dialog;
+} ImageSendDialogCandidate;
+
+typedef struct {
+    HWND preferred_button;
+    HWND fallback_control;
+} ImageSendButtonCandidate;
+
+static BOOL find_image_send_dialog(HWND hwnd, LPARAM data) {
+    ImageSendDialogCandidate *candidate = (ImageSendDialogCandidate *)data;
+    DWORD process_id = 0;
+    wchar_t title[128];
+    if (!IsWindowVisible(hwnd) || !IsWindowEnabled(hwnd)) return 1;
+    GetWindowThreadProcessId(hwnd, &process_id);
+    if (process_id != candidate->process_id) return 1;
+    if (!GetWindowTextW(hwnd, title, 128)) return 1;
+    if (!equals_ignore_ascii_case(title, L"클립보드 이미지 전송")) return 1;
+    candidate->dialog = hwnd;
+    return 0;
+}
+
+static BOOL find_image_send_button(HWND hwnd, LPARAM data) {
+    ImageSendButtonCandidate *candidate = (ImageSendButtonCandidate *)data;
+    wchar_t title[64];
+    wchar_t class_name[64];
+    if (!IsWindowVisible(hwnd) || !IsWindowEnabled(hwnd)) return 1;
+    if (!GetWindowTextW(hwnd, title, 64) ||
+        !equals_ignore_ascii_case(title, L"전송")) return 1;
+    if (!candidate->fallback_control) candidate->fallback_control = hwnd;
+    if (GetClassNameW(hwnd, class_name, 64) &&
+        prefix_ignore_ascii_case(class_name, L"Button")) {
+        candidate->preferred_button = hwnd;
+        return 0;
+    }
+    return 1;
+}
+
+/* Click only the exact send control in KakaoTalk's image confirmation window.
+ * Matching both the target process and fixed Korean labels prevents clicks in
+ * unrelated applications. Standard buttons use BM_CLICK; an exact-text custom
+ * control receives one click at its center. */
+static BOOL click_image_send_button(HWND target) {
+    ImageSendDialogCandidate dialog_candidate = {0, (HWND)0};
+    ImageSendButtonCandidate button_candidate = {(HWND)0, (HWND)0};
+    HWND button;
+    RECT bounds;
+    LPARAM center;
+    if (!IsWindow(target)) return 0;
+    GetWindowThreadProcessId(target, &dialog_candidate.process_id);
+    if (!dialog_candidate.process_id) return 0;
+    EnumWindows(find_image_send_dialog, (LPARAM)&dialog_candidate);
+    if (!dialog_candidate.dialog) return 0;
+    EnumChildWindows(
+        dialog_candidate.dialog, find_image_send_button, (LPARAM)&button_candidate
+    );
+    button = button_candidate.preferred_button;
+    if (button && IsWindow(button)) {
+        SendMessageW(button, BM_CLICK, 0, 0);
+        return !IsWindow(dialog_candidate.dialog) ||
+            !IsWindowVisible(dialog_candidate.dialog);
+    }
+    button = button_candidate.fallback_control;
+    if (!button || !IsWindow(button)) return 0;
+    if (!GetClientRect(button, &bounds)) return 0;
+    center = (LPARAM)(
+        ((unsigned int)((bounds.right - bounds.left) / 2) & 0xFFFFu) |
+        (((unsigned int)((bounds.bottom - bounds.top) / 2) & 0xFFFFu) << 16)
+    );
+    SendMessageW(button, WM_LBUTTONDOWN, MK_LBUTTON, center);
+    SendMessageW(button, WM_LBUTTONUP, 0, center);
+    return !IsWindow(dialog_candidate.dialog) ||
+        !IsWindowVisible(dialog_candidate.dialog);
 }
 
 /* Verify the owning process by its executable filename, not by a window title. */
@@ -849,11 +929,11 @@ static BOOL type_content_to_chat(HWND target, const wchar_t *text) {
         }
         append_log(L"[진행] 이미지를 채팅 입력칸에 붙여넣었습니다.\r\n");
         Sleep(500);
-        if (GetForegroundWindow() != target || !send_enter()) {
-            append_log(L"[실패] 이미지 전송용 Enter 입력에 실패했습니다.\r\n");
+        if (!click_image_send_button(target)) {
+            append_log(L"[실패] 클립보드 이미지 전송 창의 전송 버튼을 누르지 못했습니다.\r\n");
             return 0;
         }
-        append_log(L"[성공] 이미지 전송용 Enter 입력을 완료했습니다.\r\n");
+        append_log(L"[성공] 클립보드 이미지 전송 창의 전송 버튼을 눌렀습니다.\r\n");
         Sleep(1000);
         if (*text && !focus_chat_input(target)) {
             append_log(L"[실패] 이미지 전송 후 메시지 입력칸에 포커스를 설정하지 못했습니다.\r\n");
@@ -868,7 +948,7 @@ static BOOL type_content_to_chat(HWND target, const wchar_t *text) {
 }
 
 /* Apply the prepared image and text to every manually selected room in list
- * order. A stored image is pasted and sent with Enter before the text is
+ * order. A stored image is pasted and its confirmation button is clicked before the text is
  * typed. No Enter is appended after the text. */
 static void type_message_to_selected_rooms(void) {
     LRESULT count;
