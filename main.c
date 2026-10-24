@@ -7,7 +7,8 @@
  * click focus to activate its message editor. The fixed key-sequence button
  * focuses that editor and sends @, Enter, then 가나다. The right-side message
  * settings can store a clipboard image; each selected room receives that image
- * via paste and Enter before the configured text is typed without a final Enter.
+ * via paste and the image-send popup before configured text is typed without a
+ * final Enter.
  */
 
 typedef unsigned short wchar_t;
@@ -196,6 +197,8 @@ __declspec(dllimport) int StretchDIBits(HDC, int, int, int, int, int, int, int, 
 #define WS_VSCROLL            0x00200000u
 #define WS_TABSTOP            0x00010000u
 #define WS_BORDER             0x00800000u
+#define WS_CAPTION            0x00C00000u
+#define WS_SYSMENU            0x00080000u
 #define BS_GROUPBOX           0x0007u
 #define BS_OWNERDRAW          0x000Bu
 #define BS_AUTOCHECKBOX       0x0003u
@@ -206,6 +209,7 @@ __declspec(dllimport) int StretchDIBits(HDC, int, int, int, int, int, int, int, 
 #define ES_AUTOHSCROLL        0x0080u
 #define ES_READONLY           0x0800u
 #define ES_WANTRETURN         0x1000u
+#define ES_NUMBER             0x2000u
 #define LBS_NOTIFY            0x0001u
 #define LBS_NOINTEGRALHEIGHT  0x0100u
 #define WM_CREATE             0x0001u
@@ -240,6 +244,7 @@ __declspec(dllimport) int StretchDIBits(HDC, int, int, int, int, int, int, int, 
 #define LBN_SELCHANGE         1u
 #define BST_CHECKED           1u
 #define SW_RESTORE            9
+#define SW_SHOW               5
 #define GW_OWNER              4u
 #define INPUT_MOUSE           0u
 #define INPUT_KEYBOARD        1u
@@ -293,6 +298,7 @@ static HWND focus_button;
 static HWND keys_button;
 static HWND message_edit;
 static HWND mention_all_checkbox;
+static HWND timing_button;
 static HWND message_button;
 static HWND settings_group;
 static HWND image_label;
@@ -302,6 +308,10 @@ static HWND image_clear_button;
 static HWND log_label;
 static HWND log_edit;
 static HWND main_window;
+static HWND timing_window;
+static HWND timing_edits[7];
+static HWND timing_apply_button;
+static HWND timing_status;
 static HGLOBAL stored_image;
 static UINT stored_image_format;
 static UINT png_clipboard_format;
@@ -312,6 +322,18 @@ static HFONT app_font;
 static HFONT section_font;
 static HANDLE private_regular_font_handle;
 static HANDLE private_semibold_font_handle;
+
+typedef struct {
+    DWORD fixed_after_at;
+    DWORD fixed_after_enter;
+    DWORD image_paste_to_send;
+    DWORD image_send_to_input;
+    DWORD mention_after_at;
+    DWORD mention_after_enter;
+    DWORD next_room;
+} TimingSettings;
+
+static TimingSettings timings = {150, 150, 1000, 1000, 500, 500, 1500};
 
 static int maximum(int a, int b) { return a > b ? a : b; }
 
@@ -737,8 +759,11 @@ static void layout_controls(HWND hwnd) {
             settings_x + 15, 360, maximum(0, settings_width - 30), 26, 1
         );
     }
+    if (timing_button) {
+        MoveWindow(timing_button, settings_x + 15, 394, maximum(0, settings_width - 30), 32, 1);
+    }
     if (message_button) {
-        MoveWindow(message_button, settings_x + 15, 394, maximum(0, settings_width - 30), 36, 1);
+        MoveWindow(message_button, settings_x + 15, 434, maximum(0, settings_width - 30), 36, 1);
     }
     if (log_label) {
         MoveWindow(log_label, 10, log_label_y, maximum(0, width - 20), 20, 1);
@@ -986,9 +1011,9 @@ static void type_sequence_to_selected(void) {
     }
 
     if (GetForegroundWindow() != target || !send_character(L'@')) goto failed;
-    Sleep(150);  /* Allow KakaoTalk to process @ / mention UI. */
+    Sleep(timings.fixed_after_at);  /* Allow KakaoTalk to process @ / mention UI. */
     if (GetForegroundWindow() != target || !send_enter()) goto failed;
-    Sleep(150);  /* Allow KakaoTalk to process Enter before further typing. */
+    Sleep(timings.fixed_after_enter);  /* Allow KakaoTalk to process Enter before further typing. */
     if (GetForegroundWindow() != target) goto failed;
     while (*suffix) {
         if (GetForegroundWindow() != target || !send_character(*suffix)) goto failed;
@@ -1014,13 +1039,13 @@ static BOOL type_content_to_chat(HWND target, const wchar_t *text, BOOL mention_
             return 0;
         }
         append_log(L"[진행] 이미지를 채팅 입력칸에 붙여넣었습니다.\r\n");
-        Sleep(1000);
+        Sleep(timings.image_paste_to_send);
         if (!click_image_send_overlay(target)) {
             append_log(L"[실패] 클립보드 이미지 전송 오버레이의 전송 영역을 누르지 못했습니다.\r\n");
             return 0;
         }
         append_log(L"[성공] 클립보드 이미지 전송 오버레이의 전송 영역을 눌렀습니다.\r\n");
-        Sleep(1000);
+        Sleep(timings.image_send_to_input);
         if ((*text || mention_all) && !focus_chat_input(target)) {
             append_log(L"[실패] 이미지 전송 후 메시지 입력칸에 포커스를 설정하지 못했습니다.\r\n");
             return 0;
@@ -1028,9 +1053,9 @@ static BOOL type_content_to_chat(HWND target, const wchar_t *text, BOOL mention_
     }
     if (mention_all) {
         if (GetForegroundWindow() != target || !send_character(L'@')) return 0;
-        Sleep(500);
+        Sleep(timings.mention_after_at);
         if (GetForegroundWindow() != target || !send_enter()) return 0;
-        Sleep(500);
+        Sleep(timings.mention_after_enter);
         append_log(L"[진행] 모두를 멘션하기 입력을 적용했습니다.\r\n");
     }
     while (*text) {
@@ -1087,8 +1112,8 @@ static void type_message_to_selected_rooms(void) {
         append_log(title);
         append_log(L": 설정 내용 적용 완료.\r\n");
         if (index + 1 < count) {
-            append_log(L"[대기] 다음 방까지 1500ms 대기합니다.\r\n");
-            Sleep(1500);
+            append_log(L"[대기] 설정된 시간 후 다음 방으로 이동합니다.\r\n");
+            Sleep(timings.next_room);
         }
     }
     append_log(L"[완료] 선택된 모든 방의 입력을 완료했습니다.\r\n");
@@ -1110,7 +1135,8 @@ static void draw_modern_button(const DRAWITEMSTRUCT *item) {
     DWORD foreground;
     BOOL primary;
     if (!item || !item->hDC || !item->hwndItem) return;
-    primary = item->hwndItem == add_button || item->hwndItem == message_button;
+    primary = item->hwndItem == add_button || item->hwndItem == message_button ||
+        item->hwndItem == timing_apply_button;
     if (item->itemState & ODS_DISABLED) {
         background = RGB_COLOR(218, 222, 229);
         foreground = RGB_COLOR(122, 130, 143);
@@ -1153,6 +1179,180 @@ static void draw_modern_button(const DRAWITEMSTRUCT *item) {
         focus_bounds.bottom -= 4;
         DrawFocusRect(item->hDC, &focus_bounds);
     }
+}
+
+static DWORD *timing_value_at(int index) {
+    if (index == 0) return &timings.fixed_after_at;
+    if (index == 1) return &timings.fixed_after_enter;
+    if (index == 2) return &timings.image_paste_to_send;
+    if (index == 3) return &timings.image_send_to_input;
+    if (index == 4) return &timings.mention_after_at;
+    if (index == 5) return &timings.mention_after_enter;
+    if (index == 6) return &timings.next_room;
+    return (DWORD *)0;
+}
+
+static void format_delay(DWORD value, wchar_t *buffer) {
+    wchar_t reverse[16];
+    int count = 0;
+    int index;
+    do {
+        reverse[count++] = (wchar_t)(L'0' + value % 10u);
+        value /= 10u;
+    } while (value && count < 15);
+    for (index = 0; index < count; ++index) buffer[index] = reverse[count - index - 1];
+    buffer[count] = 0;
+}
+
+static BOOL read_delay(HWND edit, DWORD *result) {
+    wchar_t text[16];
+    DWORD value = 0;
+    int index;
+    int length;
+    if (!edit || !result) return 0;
+    length = GetWindowTextW(edit, text, 16);
+    if (length <= 0 || length >= 16) return 0;
+    for (index = 0; index < length; ++index) {
+        if (text[index] < L'0' || text[index] > L'9') return 0;
+        value = value * 10u + (DWORD)(text[index] - L'0');
+        if (value > 600000u) return 0;
+    }
+    *result = value;
+    return 1;
+}
+
+static void populate_timing_edits(void) {
+    wchar_t text[16];
+    int index;
+    DWORD *value;
+    for (index = 0; index < 7; ++index) {
+        value = timing_value_at(index);
+        if (timing_edits[index] && value) {
+            format_delay(*value, text);
+            SendMessageW(timing_edits[index], WM_SETTEXT, 0, (LPARAM)text);
+        }
+    }
+}
+
+static void apply_timing_edits(void) {
+    DWORD values[7];
+    DWORD *target;
+    int index;
+    for (index = 0; index < 7; ++index) {
+        if (!read_delay(timing_edits[index], &values[index])) {
+            SendMessageW(
+                timing_status, WM_SETTEXT, 0,
+                (LPARAM)L"0~600000 사이의 정수(ms)를 입력해 주세요."
+            );
+            return;
+        }
+    }
+    for (index = 0; index < 7; ++index) {
+        target = timing_value_at(index);
+        if (target) *target = values[index];
+    }
+    SendMessageW(timing_status, WM_SETTEXT, 0, (LPARAM)L"현재 실행에 시간 설정을 적용했습니다.");
+    append_log(L"[설정] 개별 시간 설정을 적용했습니다.\r\n");
+}
+
+static LRESULT timing_window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
+    static const wchar_t *labels[7] = {
+        L"지정 키: @ 입력 후",
+        L"지정 키: Enter 입력 후",
+        L"이미지 붙여넣기 후 전송 클릭",
+        L"이미지 전송 클릭 후 @/메시지",
+        L"전체 멘션: @ 입력 후",
+        L"전체 멘션: Enter 입력 후",
+        L"다음 방 이동 전"
+    };
+    HINSTANCE instance;
+    HWND label;
+    int index;
+    if (message == WM_CREATE) {
+        timing_window = hwnd;
+        instance = GetModuleHandleW((LPCWSTR)0);
+        for (index = 0; index < 7; ++index) {
+            label = CreateWindowExW(
+                0, L"STATIC", labels[index], WS_CHILD | WS_VISIBLE,
+                16, 18 + index * 38, 270, 26,
+                hwnd, (HANDLE)0, instance, (void *)0
+            );
+            timing_edits[index] = CreateWindowExW(
+                0, L"EDIT", L"",
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_NUMBER | ES_AUTOHSCROLL,
+                292, 16 + index * 38, 110, 26,
+                hwnd, (HANDLE)0, instance, (void *)0
+            );
+            set_control_font(label, app_font);
+            set_control_font(timing_edits[index], app_font);
+            SendMessageW(timing_edits[index], EM_SETLIMITTEXT, 6, 0);
+        }
+        timing_status = CreateWindowExW(
+            0, L"STATIC", L"단위: ms (0~600000)", WS_CHILD | WS_VISIBLE,
+            16, 286, 386, 22,
+            hwnd, (HANDLE)0, instance, (void *)0
+        );
+        timing_apply_button = CreateWindowExW(
+            0, L"BUTTON", L"적용",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
+            292, 318, 110, 34,
+            hwnd, (HANDLE)0, instance, (void *)0
+        );
+        set_control_font(timing_status, app_font);
+        set_control_font(timing_apply_button, app_font);
+        populate_timing_edits();
+        return 0;
+    }
+    if (message == WM_COMMAND && ((wparam >> 16) & 0xFFFFu) == 0 &&
+        (HWND)lparam == timing_apply_button) {
+        apply_timing_edits();
+        return 0;
+    }
+    if (message == WM_DRAWITEM) {
+        draw_modern_button((const DRAWITEMSTRUCT *)lparam);
+        return 1;
+    }
+    if (message == WM_ERASEBKGND && app_background_brush) {
+        RECT client;
+        if (GetClientRect(hwnd, &client)) {
+            FillRect((HDC)wparam, &client, app_background_brush);
+            return 1;
+        }
+    }
+    if (message == WM_CTLCOLORSTATIC || message == WM_CTLCOLORBTN) {
+        SetBkMode((HDC)wparam, TRANSPARENT);
+        SetTextColor((HDC)wparam, RGB_COLOR(31, 41, 55));
+        return (LRESULT)app_background_brush;
+    }
+    if (message == WM_CTLCOLOREDIT) {
+        SetBkColor((HDC)wparam, RGB_COLOR(255, 255, 255));
+        SetTextColor((HDC)wparam, RGB_COLOR(31, 41, 55));
+        return (LRESULT)surface_brush;
+    }
+    if (message == WM_DESTROY) {
+        timing_window = (HWND)0;
+        timing_apply_button = (HWND)0;
+        timing_status = (HWND)0;
+        for (index = 0; index < 7; ++index) timing_edits[index] = (HWND)0;
+        return 0;
+    }
+    return DefWindowProcW(hwnd, message, wparam, lparam);
+}
+
+static void show_timing_settings(void) {
+    HINSTANCE instance;
+    if (timing_window && IsWindow(timing_window)) {
+        ShowWindow(timing_window, SW_SHOW);
+        SetForegroundWindow(timing_window);
+        return;
+    }
+    instance = GetModuleHandleW((LPCWSTR)0);
+    timing_window = CreateWindowExW(
+        0, L"TimingSettingsMVP", L"시간 설정 (ms)",
+        WS_CAPTION | WS_SYSMENU | WS_VISIBLE,
+        (int)0x80000000u, (int)0x80000000u, 430, 395,
+        main_window, (HANDLE)0, instance, (void *)0
+    );
 }
 
 static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
@@ -1259,6 +1459,12 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
             0, 0, 150, 26,
             hwnd, (HANDLE)0, instance, (void *)0
         );
+        timing_button = CreateWindowExW(
+            0, L"BUTTON", L"시간 설정",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
+            0, 0, 150, 32,
+            hwnd, (HANDLE)0, instance, (void *)0
+        );
         message_button = CreateWindowExW(
             0, L"BUTTON", L"목록에 내용 입력",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
@@ -1300,6 +1506,7 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
         set_control_font(input_label, section_font);
         set_control_font(message_edit, app_font);
         set_control_font(mention_all_checkbox, app_font);
+        set_control_font(timing_button, app_font);
         set_control_font(message_button, app_font);
         set_control_font(log_label, section_font);
         set_control_font(log_edit, app_font);
@@ -1375,6 +1582,10 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
                 clear_stored_image(1);
                 return 0;
             }
+            if ((HWND)lparam == timing_button) {
+                show_timing_settings();
+                return 0;
+            }
             if ((HWND)lparam == message_button) {
                 type_message_to_selected_rooms();
                 return 0;
@@ -1405,6 +1616,7 @@ void app_entry(void) {
     HINSTANCE instance = GetModuleHandleW((LPCWSTR)0);
     WNDCLASSW wc;
     WNDCLASSW preview_class;
+    WNDCLASSW timing_class;
     HWND hwnd;
     MSG msg;
     HRSRC regular_font_resource;
@@ -1476,6 +1688,19 @@ void app_entry(void) {
     preview_class.lpszMenuName = (LPCWSTR)0;
     preview_class.lpszClassName = L"ImagePreviewMVP";
     RegisterClassW(&preview_class);
+
+    timing_class.style = 0;
+    timing_class.lpfnWndProc = timing_window_proc;
+    timing_class.cbClsExtra = 0;
+    timing_class.cbWndExtra = 0;
+    timing_class.hInstance = instance;
+    timing_class.hIcon = (HICON)0;
+    timing_class.hCursor = LoadCursorW((HINSTANCE)0, (LPCWSTR)(unsigned long long)IDC_ARROW);
+    timing_class.hbrBackground = app_background_brush ? app_background_brush :
+        (HBRUSH)(unsigned long long)(COLOR_WINDOW + 1);
+    timing_class.lpszMenuName = (LPCWSTR)0;
+    timing_class.lpszClassName = L"TimingSettingsMVP";
+    RegisterClassW(&timing_class);
 
     wc.style = 0;
     wc.lpfnWndProc = window_proc;
