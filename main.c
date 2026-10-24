@@ -5,12 +5,14 @@
  * At launch, list only currently visible, separately opened KakaoTalk chat
  * windows. Rooms can be moved into a user-selected room list. Select one and
  * click focus to activate its message editor. The fixed key-sequence button
- * focuses that editor and sends @, Enter, then 가나다. A separate text field
- * types its content into each selected room without sending a final Enter.
+ * focuses that editor and sends @, Enter, then 가나다. The right-side message
+ * settings can store a clipboard image; each selected room receives that image
+ * via paste and Enter before the configured text is typed without a final Enter.
  */
 
 typedef unsigned short wchar_t;
 typedef void *HANDLE;
+typedef HANDLE HGLOBAL;
 typedef HANDLE HWND;
 typedef HANDLE HINSTANCE;
 typedef HANDLE HICON;
@@ -77,6 +79,11 @@ __declspec(dllimport) void Sleep(DWORD);
 __declspec(dllimport) HANDLE OpenProcess(DWORD, BOOL, DWORD);
 __declspec(dllimport) BOOL QueryFullProcessImageNameW(HANDLE, DWORD, LPWSTR, DWORD *);
 __declspec(dllimport) BOOL CloseHandle(HANDLE);
+__declspec(dllimport) HGLOBAL GlobalAlloc(UINT, unsigned long long);
+__declspec(dllimport) void *GlobalLock(HGLOBAL);
+__declspec(dllimport) BOOL GlobalUnlock(HGLOBAL);
+__declspec(dllimport) unsigned long long GlobalSize(HGLOBAL);
+__declspec(dllimport) HGLOBAL GlobalFree(HGLOBAL);
 __declspec(dllimport) unsigned short RegisterClassW(const WNDCLASSW *);
 __declspec(dllimport) HWND CreateWindowExW(DWORD, LPCWSTR, LPCWSTR, DWORD, int, int, int, int, HWND, HANDLE, HINSTANCE, void *);
 __declspec(dllimport) LRESULT DefWindowProcW(HWND, UINT, WPARAM, LPARAM);
@@ -105,6 +112,13 @@ __declspec(dllimport) BOOL TranslateMessage(const MSG *);
 __declspec(dllimport) LRESULT DispatchMessageW(const MSG *);
 __declspec(dllimport) void PostQuitMessage(int);
 __declspec(dllimport) HCURSOR LoadCursorW(HINSTANCE, LPCWSTR);
+__declspec(dllimport) BOOL OpenClipboard(HWND);
+__declspec(dllimport) BOOL CloseClipboard(void);
+__declspec(dllimport) BOOL EmptyClipboard(void);
+__declspec(dllimport) BOOL IsClipboardFormatAvailable(UINT);
+__declspec(dllimport) HANDLE GetClipboardData(UINT);
+__declspec(dllimport) HANDLE SetClipboardData(UINT, HANDLE);
+__declspec(dllimport) UINT RegisterClipboardFormatW(LPCWSTR);
 __declspec(dllimport) HANDLE GetStockObject(int);
 
 #define WS_OVERLAPPEDWINDOW   0x00CF0000u
@@ -113,6 +127,9 @@ __declspec(dllimport) HANDLE GetStockObject(int);
 #define WS_VSCROLL            0x00200000u
 #define WS_TABSTOP            0x00010000u
 #define WS_BORDER             0x00800000u
+#define BS_GROUPBOX           0x0007u
+#define SS_CENTER             0x0001u
+#define SS_CENTERIMAGE        0x0200u
 #define ES_MULTILINE          0x0004u
 #define ES_AUTOVSCROLL        0x0040u
 #define ES_AUTOHSCROLL        0x0080u
@@ -122,6 +139,7 @@ __declspec(dllimport) HANDLE GetStockObject(int);
 #define WM_CREATE             0x0001u
 #define WM_DESTROY            0x0002u
 #define WM_SIZE               0x0005u
+#define WM_SETTEXT            0x000Cu
 #define WM_COMMAND            0x0111u
 #define WM_SETFONT            0x0030u
 #define EM_SETLIMITTEXT       0x00C5u
@@ -145,10 +163,15 @@ __declspec(dllimport) HANDLE GetStockObject(int);
 #define KEYEVENTF_KEYUP       0x0002u
 #define KEYEVENTF_UNICODE     0x0004u
 #define VK_RETURN             0x0Du
+#define VK_CONTROL            0x11u
+#define VK_V                  0x56u
 #define COLOR_WINDOW          5u
 #define DEFAULT_GUI_FONT      17
 #define IDC_ARROW             32512u
 #define PROCESS_QUERY_LIMITED_INFORMATION 0x1000u
+#define GMEM_MOVEABLE         0x0002u
+#define CF_DIB                8u
+#define CF_DIBV5              17u
 
 static HWND listbox;
 static HWND selected_listbox;
@@ -162,9 +185,17 @@ static HWND focus_button;
 static HWND keys_button;
 static HWND message_edit;
 static HWND message_button;
+static HWND settings_group;
+static HWND image_label;
+static HWND image_status;
+static HWND image_paste_button;
+static HWND image_clear_button;
 static HWND log_label;
 static HWND log_edit;
 static HWND main_window;
+static HGLOBAL stored_image;
+static UINT stored_image_format;
+static UINT png_clipboard_format;
 static wchar_t prepared_text[4096];
 
 static int maximum(int a, int b) { return a > b ? a : b; }
@@ -176,6 +207,101 @@ static void append_log(const wchar_t *text) {
     SendMessageW(log_edit, EM_REPLACESEL, 0, (LPARAM)text);
     SendMessageW(log_edit, EM_SETREADONLY, 1, 0);
     SendMessageW(log_edit, EM_SCROLLCARET, 0, 0);
+}
+
+static void copy_bytes(BYTE *destination, const BYTE *source, unsigned long long size) {
+    while (size) {
+        *destination++ = *source++;
+        --size;
+    }
+}
+
+static HGLOBAL clone_global_memory(HGLOBAL source) {
+    unsigned long long size;
+    const BYTE *source_data;
+    BYTE *destination_data;
+    HGLOBAL destination;
+    if (!source) return (HGLOBAL)0;
+    size = GlobalSize(source);
+    if (!size) return (HGLOBAL)0;
+    source_data = (const BYTE *)GlobalLock(source);
+    if (!source_data) return (HGLOBAL)0;
+    destination = GlobalAlloc(GMEM_MOVEABLE, size);
+    if (!destination) {
+        GlobalUnlock(source);
+        return (HGLOBAL)0;
+    }
+    destination_data = (BYTE *)GlobalLock(destination);
+    if (!destination_data) {
+        GlobalUnlock(source);
+        GlobalFree(destination);
+        return (HGLOBAL)0;
+    }
+    copy_bytes(destination_data, source_data, size);
+    GlobalUnlock(destination);
+    GlobalUnlock(source);
+    return destination;
+}
+
+static void update_image_status(void) {
+    if (!image_status) return;
+    SendMessageW(
+        image_status, WM_SETTEXT, 0,
+        (LPARAM)(stored_image ? L"이미지 저장됨" : L"이미지 없음")
+    );
+}
+
+static void clear_stored_image(BOOL write_log) {
+    if (stored_image) GlobalFree(stored_image);
+    stored_image = (HGLOBAL)0;
+    stored_image_format = 0;
+    update_image_status();
+    if (write_log) append_log(L"[이미지] 저장된 이미지를 삭제했습니다.\r\n");
+}
+
+static BOOL capture_clipboard_image(void) {
+    UINT format = 0;
+    HGLOBAL source;
+    HGLOBAL copy;
+    if (!OpenClipboard(main_window)) return 0;
+    if (IsClipboardFormatAvailable(CF_DIB)) {
+        format = CF_DIB;
+    } else if (IsClipboardFormatAvailable(CF_DIBV5)) {
+        format = CF_DIBV5;
+    } else if (png_clipboard_format && IsClipboardFormatAvailable(png_clipboard_format)) {
+        format = png_clipboard_format;
+    }
+    if (!format) {
+        CloseClipboard();
+        return 0;
+    }
+    source = (HGLOBAL)GetClipboardData(format);
+    copy = clone_global_memory(source);
+    CloseClipboard();
+    if (!copy) return 0;
+    clear_stored_image(0);
+    stored_image = copy;
+    stored_image_format = format;
+    update_image_status();
+    return 1;
+}
+
+static BOOL publish_stored_image(void) {
+    HGLOBAL copy;
+    if (!stored_image || !stored_image_format) return 0;
+    copy = clone_global_memory(stored_image);
+    if (!copy) return 0;
+    if (!OpenClipboard(main_window)) {
+        GlobalFree(copy);
+        return 0;
+    }
+    if (!EmptyClipboard() || !SetClipboardData(stored_image_format, copy)) {
+        CloseClipboard();
+        GlobalFree(copy);
+        return 0;
+    }
+    CloseClipboard();
+    return 1;
 }
 
 /* Only case-fold ASCII characters; the executable/class names are ASCII. */
@@ -270,19 +396,23 @@ static BOOL looks_like_chat_window(HWND hwnd) {
 static void layout_controls(HWND hwnd) {
     RECT rect;
     int width, height, list_width, list_height, center_x, right_x;
-    int action_y, input_y, log_label_y, log_top, log_height;
+    int action_y, log_label_y, log_top, log_height;
+    int settings_x, settings_width, lists_area_width, half_button_width;
     if (!GetClientRect(hwnd, &rect)) return;
     width = rect.right - rect.left;
     height = rect.bottom - rect.top;
     log_top = maximum(0, height - 130);
     log_height = maximum(0, height - log_top - 10);
     log_label_y = maximum(0, log_top - 24);
-    input_y = maximum(0, log_label_y - 40);
-    action_y = maximum(0, input_y - 38);
-    list_width = maximum(0, (width - 150) / 2);
+    action_y = maximum(0, log_label_y - 38);
+    settings_x = maximum(510, width - 310);
+    settings_width = maximum(0, width - settings_x - 10);
+    lists_area_width = maximum(0, settings_x - 20);
+    list_width = maximum(0, (lists_area_width - 130) / 2);
     list_height = maximum(0, action_y - 44);
     center_x = 20 + list_width;
     right_x = center_x + 110;
+    half_button_width = maximum(0, (settings_width - 30) / 2);
     if (source_label) {
         MoveWindow(source_label, 10, 10, list_width, 20, 1);
     }
@@ -307,14 +437,33 @@ static void layout_controls(HWND hwnd) {
     if (keys_button) {
         MoveWindow(keys_button, 130, action_y, 110, 30, 1);
     }
+    if (settings_group) {
+        MoveWindow(settings_group, settings_x, 10, settings_width, maximum(0, action_y + 30), 1);
+    }
+    if (image_label) {
+        MoveWindow(image_label, settings_x + 15, 38, maximum(0, settings_width - 30), 20, 1);
+    }
+    if (image_status) {
+        MoveWindow(image_status, settings_x + 15, 62, maximum(0, settings_width - 30), 54, 1);
+    }
+    if (image_paste_button) {
+        MoveWindow(image_paste_button, settings_x + 15, 126, half_button_width, 30, 1);
+    }
+    if (image_clear_button) {
+        MoveWindow(
+            image_clear_button,
+            settings_x + 20 + half_button_width,
+            126, half_button_width, 30, 1
+        );
+    }
     if (input_label) {
-        MoveWindow(input_label, 10, input_y + 6, 70, 24, 1);
+        MoveWindow(input_label, settings_x + 15, 172, maximum(0, settings_width - 30), 20, 1);
     }
     if (message_edit) {
-        MoveWindow(message_edit, 80, input_y, maximum(0, width - 250), 30, 1);
+        MoveWindow(message_edit, settings_x + 15, 196, maximum(0, settings_width - 30), 30, 1);
     }
     if (message_button) {
-        MoveWindow(message_button, maximum(0, width - 160), input_y, 150, 30, 1);
+        MoveWindow(message_button, settings_x + 15, 236, maximum(0, settings_width - 30), 34, 1);
     }
     if (log_label) {
         MoveWindow(log_label, 10, log_label_y, maximum(0, width - 20), 20, 1);
@@ -501,6 +650,27 @@ static BOOL send_enter(void) {
     return SendInput(2, events, (int)sizeof(INPUT)) == 2;
 }
 
+static BOOL send_paste(void) {
+    INPUT events[4] = {0};
+    INPUT release_control = {0};
+    UINT sent;
+    events[0].type = INPUT_KEYBOARD;
+    events[0].data.ki.wVk = VK_CONTROL;
+    events[1].type = INPUT_KEYBOARD;
+    events[1].data.ki.wVk = VK_V;
+    events[2] = events[1];
+    events[2].data.ki.dwFlags = KEYEVENTF_KEYUP;
+    events[3] = events[0];
+    events[3].data.ki.dwFlags = KEYEVENTF_KEYUP;
+    sent = SendInput(4, events, (int)sizeof(INPUT));
+    if (sent == 4) return 1;
+    release_control.type = INPUT_KEYBOARD;
+    release_control.data.ki.wVk = VK_CONTROL;
+    release_control.data.ki.dwFlags = KEYEVENTF_KEYUP;
+    SendInput(1, &release_control, (int)sizeof(INPUT));
+    return 0;
+}
+
 /* The button itself steals foreground focus. Restore the selected chat editor
  * before sending real keyboard input. If foreground changed, abort early. */
 static void type_sequence_to_selected(void) {
@@ -532,8 +702,31 @@ failed:
     append_log(L"[실패] 지정 키 입력 중 대상 포커스가 변경되어 중단했습니다.\r\n");
 }
 
-static BOOL type_text_to_chat(HWND target, const wchar_t *text) {
-    if (!target || !focus_chat_input(target)) return 0;
+static BOOL type_content_to_chat(HWND target, const wchar_t *text) {
+    if (!target) return 0;
+    if (stored_image && !publish_stored_image()) {
+        append_log(L"[실패] 저장된 이미지를 클립보드에 복사하지 못했습니다.\r\n");
+        return 0;
+    }
+    if (!focus_chat_input(target)) return 0;
+    if (stored_image) {
+        if (GetForegroundWindow() != target || !send_paste()) {
+            append_log(L"[실패] 이미지 붙여넣기 키 입력에 실패했습니다.\r\n");
+            return 0;
+        }
+        append_log(L"[진행] 이미지를 채팅 입력칸에 붙여넣었습니다.\r\n");
+        Sleep(1000);
+        if (GetForegroundWindow() != target || !send_enter()) {
+            append_log(L"[실패] 이미지 전송용 Enter 입력에 실패했습니다.\r\n");
+            return 0;
+        }
+        append_log(L"[성공] 이미지 전송용 Enter 입력을 완료했습니다.\r\n");
+        Sleep(1000);
+        if (*text && !focus_chat_input(target)) {
+            append_log(L"[실패] 이미지 전송 후 메시지 입력칸에 포커스를 설정하지 못했습니다.\r\n");
+            return 0;
+        }
+    }
     while (*text) {
         if (GetForegroundWindow() != target || !send_character(*text)) return 0;
         ++text;
@@ -541,17 +734,19 @@ static BOOL type_text_to_chat(HWND target, const wchar_t *text) {
     return 1;
 }
 
-/* Type the prepared text into every manually selected room in list order.
- * No Enter is appended, so this action does not intentionally send a message.
- * Stop the entire traversal if any target or focus verification fails. */
+/* Apply the prepared image and text to every manually selected room in list
+ * order. A stored image is pasted and sent with Enter before the text is
+ * typed. No Enter is appended after the text. */
 static void type_message_to_selected_rooms(void) {
     LRESULT count;
     LRESULT index;
     HWND target;
     wchar_t title[512];
     if (!message_edit || !selected_listbox) return;
-    if (!GetWindowTextW(message_edit, prepared_text, 4096)) {
-        append_log(L"[중단] 입력 내용이 비어 있습니다.\r\n");
+    prepared_text[0] = 0;
+    GetWindowTextW(message_edit, prepared_text, 4096);
+    if (!prepared_text[0] && !stored_image) {
+        append_log(L"[중단] 이미지와 메시지가 모두 비어 있습니다.\r\n");
         return;
     }
     count = SendMessageW(selected_listbox, LB_GETCOUNT, 0, 0);
@@ -565,9 +760,9 @@ static void type_message_to_selected_rooms(void) {
         SendMessageW(selected_listbox, LB_GETTEXT, (WPARAM)index, (LPARAM)title);
         append_log(L"[진행] ");
         append_log(title);
-        append_log(L": 입력 중...\r\n");
+        append_log(L": 설정 내용을 적용 중...\r\n");
         target = chat_window_at(selected_listbox, index);
-        if (!target || !type_text_to_chat(target, prepared_text)) {
+        if (!target || !type_content_to_chat(target, prepared_text)) {
             append_log(L"[실패] ");
             append_log(title);
             append_log(L": 대상 또는 포커스를 확인할 수 없어 중단했습니다.\r\n");
@@ -575,7 +770,7 @@ static void type_message_to_selected_rooms(void) {
         }
         append_log(L"[성공] ");
         append_log(title);
-        append_log(L": 입력 완료.\r\n");
+        append_log(L": 설정 내용 적용 완료.\r\n");
         if (index + 1 < count) {
             append_log(L"[대기] 다음 방까지 1500ms 대기합니다.\r\n");
             Sleep(1500);
@@ -643,8 +838,38 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
             0, 0, 110, 30,
             hwnd, (HANDLE)0, instance, (void *)0
         );
+        settings_group = CreateWindowExW(
+            0, L"BUTTON", L"메시지 설정",
+            WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
+            0, 0, 100, 100,
+            hwnd, (HANDLE)0, instance, (void *)0
+        );
+        image_label = CreateWindowExW(
+            0, L"STATIC", L"클립보드 이미지",
+            WS_CHILD | WS_VISIBLE,
+            0, 0, 100, 20,
+            hwnd, (HANDLE)0, instance, (void *)0
+        );
+        image_status = CreateWindowExW(
+            0, L"STATIC", L"이미지 없음",
+            WS_CHILD | WS_VISIBLE | WS_BORDER | SS_CENTER | SS_CENTERIMAGE,
+            0, 0, 100, 54,
+            hwnd, (HANDLE)0, instance, (void *)0
+        );
+        image_paste_button = CreateWindowExW(
+            0, L"BUTTON", L"이미지 붙여넣기",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+            0, 0, 120, 30,
+            hwnd, (HANDLE)0, instance, (void *)0
+        );
+        image_clear_button = CreateWindowExW(
+            0, L"BUTTON", L"이미지 지우기",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+            0, 0, 120, 30,
+            hwnd, (HANDLE)0, instance, (void *)0
+        );
         input_label = CreateWindowExW(
-            0, L"STATIC", L"입력 내용",
+            0, L"STATIC", L"메시지",
             WS_CHILD | WS_VISIBLE,
             0, 0, 70, 24,
             hwnd, (HANDLE)0, instance, (void *)0
@@ -678,6 +903,7 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
             EnumWindows(collect_window, (LPARAM)listbox);
         }
         active_listbox = listbox;
+        png_clipboard_format = RegisterClipboardFormatW(L"PNG");
         if (message_edit) SendMessageW(message_edit, EM_SETLIMITTEXT, 4095, 0);
         set_default_font(source_label);
         set_default_font(selected_label);
@@ -687,6 +913,11 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
         set_default_font(remove_button);
         set_default_font(focus_button);
         set_default_font(keys_button);
+        set_default_font(settings_group);
+        set_default_font(image_label);
+        set_default_font(image_status);
+        set_default_font(image_paste_button);
+        set_default_font(image_clear_button);
         set_default_font(input_label);
         set_default_font(message_edit);
         set_default_font(message_button);
@@ -723,6 +954,18 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
                 type_sequence_to_selected();
                 return 0;
             }
+            if ((HWND)lparam == image_paste_button) {
+                if (capture_clipboard_image()) {
+                    append_log(L"[이미지] 클립보드 이미지를 저장했습니다.\r\n");
+                } else {
+                    append_log(L"[실패] 클립보드에서 지원되는 이미지를 찾지 못했습니다.\r\n");
+                }
+                return 0;
+            }
+            if ((HWND)lparam == image_clear_button) {
+                clear_stored_image(1);
+                return 0;
+            }
             if ((HWND)lparam == message_button) {
                 type_message_to_selected_rooms();
                 return 0;
@@ -730,6 +973,7 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
         }
     }
     if (message == WM_DESTROY) {
+        clear_stored_image(0);
         PostQuitMessage(0);
         return 0;
     }
@@ -757,7 +1001,7 @@ void app_entry(void) {
     hwnd = CreateWindowExW(
         0, wc.lpszClassName, L"카카오톡 대화창 목록",
         WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-        (int)0x80000000u, (int)0x80000000u, 820, 700,
+        (int)0x80000000u, (int)0x80000000u, 1120, 700,
         (HWND)0, (HANDLE)0, instance, (void *)0
     );
     if (!hwnd) ExitProcess(1);
