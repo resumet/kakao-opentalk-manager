@@ -86,9 +86,18 @@ typedef struct {
     unsigned long long dwExtraInfo;
 } KEYBDINPUT;
 typedef struct {
+    LONG dx;
+    LONG dy;
+    DWORD mouseData;
+    DWORD dwFlags;
+    DWORD time;
+    unsigned long long dwExtraInfo;
+} MOUSEINPUT;
+typedef struct {
     DWORD type;
     union {
         KEYBDINPUT ki;
+        MOUSEINPUT mi;
         BYTE raw[32];
     } data;
 } INPUT;
@@ -125,6 +134,8 @@ __declspec(dllimport) UINT SendInput(UINT, INPUT *, int);
 __declspec(dllimport) HWND GetForegroundWindow(void);
 __declspec(dllimport) BOOL IsWindowEnabled(HWND);
 __declspec(dllimport) BOOL GetWindowRect(HWND, RECT *);
+__declspec(dllimport) BOOL GetCursorPos(POINT *);
+__declspec(dllimport) BOOL SetCursorPos(int, int);
 __declspec(dllimport) int GetWindowTextW(HWND, LPWSTR, int);
 __declspec(dllimport) LRESULT SendMessageW(HWND, UINT, WPARAM, LPARAM);
 __declspec(dllimport) BOOL MoveWindow(HWND, int, int, int, int, BOOL);
@@ -172,8 +183,6 @@ __declspec(dllimport) int StretchDIBits(HDC, int, int, int, int, int, int, int, 
 #define WM_SETTEXT            0x000Cu
 #define WM_COMMAND            0x0111u
 #define WM_SETFONT            0x0030u
-#define WM_LBUTTONDOWN        0x0201u
-#define WM_LBUTTONUP          0x0202u
 #define EM_SETLIMITTEXT       0x00C5u
 #define EM_SETSEL             0x00B1u
 #define EM_REPLACESEL         0x00C2u
@@ -190,10 +199,11 @@ __declspec(dllimport) int StretchDIBits(HDC, int, int, int, int, int, int, int, 
 #define LB_ERR                (-1)
 #define LB_ERRSPACE           (-2)
 #define LBN_SELCHANGE         1u
-#define BM_CLICK              0x00F5u
-#define MK_LBUTTON            0x0001u
 #define SW_RESTORE            9
+#define INPUT_MOUSE           0u
 #define INPUT_KEYBOARD        1u
+#define MOUSEEVENTF_LEFTDOWN  0x0002u
+#define MOUSEEVENTF_LEFTUP    0x0004u
 #define KEYEVENTF_KEYUP       0x0002u
 #define KEYEVENTF_UNICODE     0x0004u
 #define VK_RETURN             0x0Du
@@ -463,80 +473,40 @@ static BOOL prefix_ignore_ascii_case(const wchar_t *s, const wchar_t *prefix) {
     return 1;
 }
 
-typedef struct {
-    DWORD process_id;
-    HWND dialog;
-} ImageSendDialogCandidate;
-
-typedef struct {
-    HWND preferred_button;
-    HWND fallback_control;
-} ImageSendButtonCandidate;
-
-static BOOL find_image_send_dialog(HWND hwnd, LPARAM data) {
-    ImageSendDialogCandidate *candidate = (ImageSendDialogCandidate *)data;
-    DWORD process_id = 0;
-    wchar_t title[128];
-    if (!IsWindowVisible(hwnd) || !IsWindowEnabled(hwnd)) return 1;
-    GetWindowThreadProcessId(hwnd, &process_id);
-    if (process_id != candidate->process_id) return 1;
-    if (!GetWindowTextW(hwnd, title, 128)) return 1;
-    if (!equals_ignore_ascii_case(title, L"클립보드 이미지 전송")) return 1;
-    candidate->dialog = hwnd;
-    return 0;
-}
-
-static BOOL find_image_send_button(HWND hwnd, LPARAM data) {
-    ImageSendButtonCandidate *candidate = (ImageSendButtonCandidate *)data;
-    wchar_t title[64];
-    wchar_t class_name[64];
-    if (!IsWindowVisible(hwnd) || !IsWindowEnabled(hwnd)) return 1;
-    if (!GetWindowTextW(hwnd, title, 64) ||
-        !equals_ignore_ascii_case(title, L"전송")) return 1;
-    if (!candidate->fallback_control) candidate->fallback_control = hwnd;
-    if (GetClassNameW(hwnd, class_name, 64) &&
-        prefix_ignore_ascii_case(class_name, L"Button")) {
-        candidate->preferred_button = hwnd;
-        return 0;
-    }
-    return 1;
-}
-
-/* Click only the exact send control in KakaoTalk's image confirmation window.
- * Matching both the target process and fixed Korean labels prevents clicks in
- * unrelated applications. Standard buttons use BM_CLICK; an exact-text custom
- * control receives one click at its center. */
-static BOOL click_image_send_button(HWND target) {
-    ImageSendDialogCandidate dialog_candidate = {0, (HWND)0};
-    ImageSendButtonCandidate button_candidate = {(HWND)0, (HWND)0};
-    HWND button;
+/* KakaoTalk draws the clipboard confirmation as a custom overlay inside the
+ * room window, without exposing its title or send action as child HWNDs or UI
+ * Automation elements. Click the send row shown at the horizontal center and
+ * 78% of the room window height, then restore the user's cursor position. */
+static BOOL click_image_send_overlay(HWND target) {
     RECT bounds;
-    LPARAM center;
-    if (!IsWindow(target)) return 0;
-    GetWindowThreadProcessId(target, &dialog_candidate.process_id);
-    if (!dialog_candidate.process_id) return 0;
-    EnumWindows(find_image_send_dialog, (LPARAM)&dialog_candidate);
-    if (!dialog_candidate.dialog) return 0;
-    EnumChildWindows(
-        dialog_candidate.dialog, find_image_send_button, (LPARAM)&button_candidate
-    );
-    button = button_candidate.preferred_button;
-    if (button && IsWindow(button)) {
-        SendMessageW(button, BM_CLICK, 0, 0);
-        return !IsWindow(dialog_candidate.dialog) ||
-            !IsWindowVisible(dialog_candidate.dialog);
+    POINT original_cursor;
+    INPUT events[2] = {0};
+    INPUT release_button = {0};
+    UINT sent;
+    int width;
+    int height;
+    int click_x;
+    int click_y;
+    if (!IsWindow(target) || !IsWindowVisible(target) || !IsWindowEnabled(target)) return 0;
+    if (GetForegroundWindow() != target || !GetWindowRect(target, &bounds)) return 0;
+    width = bounds.right - bounds.left;
+    height = bounds.bottom - bounds.top;
+    if (width < 200 || height < 300 || !GetCursorPos(&original_cursor)) return 0;
+    click_x = bounds.left + width / 2;
+    click_y = bounds.top + (int)((long long)height * 78 / 100);
+    if (!SetCursorPos(click_x, click_y)) return 0;
+    events[0].type = INPUT_MOUSE;
+    events[0].data.mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
+    events[1].type = INPUT_MOUSE;
+    events[1].data.mi.dwFlags = MOUSEEVENTF_LEFTUP;
+    sent = SendInput(2, events, (int)sizeof(INPUT));
+    if (sent != 2) {
+        release_button.type = INPUT_MOUSE;
+        release_button.data.mi.dwFlags = MOUSEEVENTF_LEFTUP;
+        SendInput(1, &release_button, (int)sizeof(INPUT));
     }
-    button = button_candidate.fallback_control;
-    if (!button || !IsWindow(button)) return 0;
-    if (!GetClientRect(button, &bounds)) return 0;
-    center = (LPARAM)(
-        ((unsigned int)((bounds.right - bounds.left) / 2) & 0xFFFFu) |
-        (((unsigned int)((bounds.bottom - bounds.top) / 2) & 0xFFFFu) << 16)
-    );
-    SendMessageW(button, WM_LBUTTONDOWN, MK_LBUTTON, center);
-    SendMessageW(button, WM_LBUTTONUP, 0, center);
-    return !IsWindow(dialog_candidate.dialog) ||
-        !IsWindowVisible(dialog_candidate.dialog);
+    SetCursorPos(original_cursor.x, original_cursor.y);
+    return sent == 2;
 }
 
 /* Verify the owning process by its executable filename, not by a window title. */
@@ -929,11 +899,11 @@ static BOOL type_content_to_chat(HWND target, const wchar_t *text) {
         }
         append_log(L"[진행] 이미지를 채팅 입력칸에 붙여넣었습니다.\r\n");
         Sleep(500);
-        if (!click_image_send_button(target)) {
-            append_log(L"[실패] 클립보드 이미지 전송 창의 전송 버튼을 누르지 못했습니다.\r\n");
+        if (!click_image_send_overlay(target)) {
+            append_log(L"[실패] 클립보드 이미지 전송 오버레이의 전송 영역을 누르지 못했습니다.\r\n");
             return 0;
         }
-        append_log(L"[성공] 클립보드 이미지 전송 창의 전송 버튼을 눌렀습니다.\r\n");
+        append_log(L"[성공] 클립보드 이미지 전송 오버레이의 전송 영역을 눌렀습니다.\r\n");
         Sleep(1000);
         if (*text && !focus_chat_input(target)) {
             append_log(L"[실패] 이미지 전송 후 메시지 입력칸에 포커스를 설정하지 못했습니다.\r\n");
