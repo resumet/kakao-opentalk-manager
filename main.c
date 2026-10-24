@@ -3,10 +3,8 @@
  * Windows 10/11 x64, single native Win32 executable, no third-party runtime.
  *
  * At launch, list only currently visible, separately opened KakaoTalk chat
- * windows. Rooms can be moved into a user-selected room list. Select one and
- * click focus to activate its message editor. The fixed key-sequence button
- * focuses that editor and sends @, Enter, then 가나다. The right-side message
- * settings can store a clipboard image; each selected room receives that image
+ * windows. Rooms can be moved into a user-selected room list. The right-side
+ * message settings can store a clipboard image; each selected room receives that image
  * via paste and the image-send popup before configured text is typed without a
  * final Enter.
  */
@@ -241,7 +239,6 @@ __declspec(dllimport) int StretchDIBits(HDC, int, int, int, int, int, int, int, 
 #define LB_SETITEMDATA        0x019Au
 #define LB_ERR                (-1)
 #define LB_ERRSPACE           (-2)
-#define LBN_SELCHANGE         1u
 #define BST_CHECKED           1u
 #define SW_RESTORE            9
 #define SW_SHOW               5
@@ -288,14 +285,11 @@ __declspec(dllimport) int StretchDIBits(HDC, int, int, int, int, int, int, int, 
 
 static HWND listbox;
 static HWND selected_listbox;
-static HWND active_listbox;
 static HWND source_label;
 static HWND selected_label;
 static HWND input_label;
 static HWND add_button;
 static HWND remove_button;
-static HWND focus_button;
-static HWND keys_button;
 static HWND message_edit;
 static HWND mention_all_checkbox;
 static HWND timing_button;
@@ -309,7 +303,7 @@ static HWND log_label;
 static HWND log_edit;
 static HWND main_window;
 static HWND timing_window;
-static HWND timing_edits[7];
+static HWND timing_edits[5];
 static HWND timing_apply_button;
 static HWND timing_status;
 static HGLOBAL stored_image;
@@ -324,8 +318,6 @@ static HANDLE private_regular_font_handle;
 static HANDLE private_semibold_font_handle;
 
 typedef struct {
-    DWORD fixed_after_at;
-    DWORD fixed_after_enter;
     DWORD image_paste_to_send;
     DWORD image_send_to_input;
     DWORD mention_after_at;
@@ -333,7 +325,7 @@ typedef struct {
     DWORD next_room;
 } TimingSettings;
 
-static TimingSettings timings = {150, 150, 1000, 1000, 500, 500, 1500};
+static TimingSettings timings = {1000, 1000, 500, 500, 1500};
 
 static int maximum(int a, int b) { return a > b ? a : b; }
 
@@ -700,7 +692,7 @@ static void layout_controls(HWND hwnd) {
     settings_width = maximum(0, width - settings_x - 10);
     lists_area_width = maximum(0, settings_x - 20);
     list_width = maximum(0, (lists_area_width - 130) / 2);
-    list_height = maximum(0, action_y - 44);
+    list_height = maximum(0, log_label_y - 44);
     center_x = 20 + list_width;
     right_x = center_x + 110;
     half_button_width = maximum(0, (settings_width - 30) / 2);
@@ -721,12 +713,6 @@ static void layout_controls(HWND hwnd) {
     }
     if (remove_button) {
         MoveWindow(remove_button, center_x, 104, 90, 30, 1);
-    }
-    if (focus_button) {
-        MoveWindow(focus_button, 10, action_y, 110, 30, 1);
-    }
-    if (keys_button) {
-        MoveWindow(keys_button, 130, action_y, 110, 30, 1);
     }
     if (settings_group) {
         MoveWindow(settings_group, settings_x, 10, settings_width, maximum(0, action_y + 30), 1);
@@ -879,14 +865,6 @@ static HWND chat_window_at(HWND room_list, LRESULT index) {
     return target;
 }
 
-static HWND selected_chat_window(void) {
-    HWND room_list = active_listbox ? active_listbox : listbox;
-    LRESULT index;
-    if (!room_list) return (HWND)0;
-    index = SendMessageW(room_list, LB_GETCURSEL, 0, 0);
-    return chat_window_at(room_list, index);
-}
-
 static void move_selected_room(HWND from, HWND to) {
     wchar_t title[512];
     LRESULT index;
@@ -903,7 +881,6 @@ static void move_selected_room(HWND from, HWND to) {
     SendMessageW(to, LB_SETITEMDATA, (WPARAM)new_index, item_data);
     SendMessageW(from, LB_DELETESTRING, (WPARAM)index, 0);
     SendMessageW(to, LB_SETCURSEL, (WPARAM)new_index, 0);
-    active_listbox = to;
     if (to == selected_listbox) {
         append_log(L"[선택] ");
         append_log(title);
@@ -912,19 +889,6 @@ static void move_selected_room(HWND from, HWND to) {
         append_log(L"[제외] ");
         append_log(title);
         append_log(L"\r\n");
-    }
-}
-
-static void focus_selected_window(void) {
-    HWND target = selected_chat_window();
-    if (!target) {
-        append_log(L"[실패] 포커스를 이동할 대화방을 선택해 주세요.\r\n");
-        return;
-    }
-    if (focus_chat_input(target)) {
-        append_log(L"[성공] 선택한 대화방 입력칸으로 포커스를 이동했습니다.\r\n");
-    } else {
-        append_log(L"[실패] 선택한 대화방의 입력칸에 포커스를 설정하지 못했습니다.\r\n");
     }
 }
 
@@ -993,37 +957,6 @@ static BOOL send_paste(void) {
     release_control.data.ki.dwFlags = KEYEVENTF_KEYUP;
     SendInput(1, &release_control, (int)sizeof(INPUT));
     return 0;
-}
-
-/* The button itself steals foreground focus. Restore the selected chat editor
- * before sending real keyboard input. If foreground changed, abort early. */
-static void type_sequence_to_selected(void) {
-    HWND target = selected_chat_window();
-    const wchar_t *suffix = L"가나다";
-    if (!target) {
-        append_log(L"[실패] 지정 키를 입력할 대화방을 선택해 주세요.\r\n");
-        return;
-    }
-    append_log(L"[진행] 지정 키 입력을 시작합니다.\r\n");
-    if (!focus_chat_input(target)) {
-        append_log(L"[실패] 대상 입력칸에 포커스를 설정하지 못했습니다.\r\n");
-        return;
-    }
-
-    if (GetForegroundWindow() != target || !send_character(L'@')) goto failed;
-    Sleep(timings.fixed_after_at);  /* Allow KakaoTalk to process @ / mention UI. */
-    if (GetForegroundWindow() != target || !send_enter()) goto failed;
-    Sleep(timings.fixed_after_enter);  /* Allow KakaoTalk to process Enter before further typing. */
-    if (GetForegroundWindow() != target) goto failed;
-    while (*suffix) {
-        if (GetForegroundWindow() != target || !send_character(*suffix)) goto failed;
-        ++suffix;
-    }
-    append_log(L"[성공] 지정 키 입력을 완료했습니다.\r\n");
-    return;
-
-failed:
-    append_log(L"[실패] 지정 키 입력 중 대상 포커스가 변경되어 중단했습니다.\r\n");
 }
 
 static BOOL type_content_to_chat(HWND target, const wchar_t *text, BOOL mention_all) {
@@ -1182,13 +1115,11 @@ static void draw_modern_button(const DRAWITEMSTRUCT *item) {
 }
 
 static DWORD *timing_value_at(int index) {
-    if (index == 0) return &timings.fixed_after_at;
-    if (index == 1) return &timings.fixed_after_enter;
-    if (index == 2) return &timings.image_paste_to_send;
-    if (index == 3) return &timings.image_send_to_input;
-    if (index == 4) return &timings.mention_after_at;
-    if (index == 5) return &timings.mention_after_enter;
-    if (index == 6) return &timings.next_room;
+    if (index == 0) return &timings.image_paste_to_send;
+    if (index == 1) return &timings.image_send_to_input;
+    if (index == 2) return &timings.mention_after_at;
+    if (index == 3) return &timings.mention_after_enter;
+    if (index == 4) return &timings.next_room;
     return (DWORD *)0;
 }
 
@@ -1225,7 +1156,7 @@ static void populate_timing_edits(void) {
     wchar_t text[16];
     int index;
     DWORD *value;
-    for (index = 0; index < 7; ++index) {
+    for (index = 0; index < 5; ++index) {
         value = timing_value_at(index);
         if (timing_edits[index] && value) {
             format_delay(*value, text);
@@ -1235,10 +1166,10 @@ static void populate_timing_edits(void) {
 }
 
 static void apply_timing_edits(void) {
-    DWORD values[7];
+    DWORD values[5];
     DWORD *target;
     int index;
-    for (index = 0; index < 7; ++index) {
+    for (index = 0; index < 5; ++index) {
         if (!read_delay(timing_edits[index], &values[index])) {
             SendMessageW(
                 timing_status, WM_SETTEXT, 0,
@@ -1247,7 +1178,7 @@ static void apply_timing_edits(void) {
             return;
         }
     }
-    for (index = 0; index < 7; ++index) {
+    for (index = 0; index < 5; ++index) {
         target = timing_value_at(index);
         if (target) *target = values[index];
     }
@@ -1256,9 +1187,7 @@ static void apply_timing_edits(void) {
 }
 
 static LRESULT timing_window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
-    static const wchar_t *labels[7] = {
-        L"지정 키: @ 입력 후",
-        L"지정 키: Enter 입력 후",
+    static const wchar_t *labels[5] = {
         L"이미지 붙여넣기 후 전송 클릭",
         L"이미지 전송 클릭 후 @/메시지",
         L"전체 멘션: @ 입력 후",
@@ -1271,7 +1200,7 @@ static LRESULT timing_window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM
     if (message == WM_CREATE) {
         timing_window = hwnd;
         instance = GetModuleHandleW((LPCWSTR)0);
-        for (index = 0; index < 7; ++index) {
+        for (index = 0; index < 5; ++index) {
             label = CreateWindowExW(
                 0, L"STATIC", labels[index], WS_CHILD | WS_VISIBLE,
                 16, 18 + index * 38, 270, 26,
@@ -1289,13 +1218,13 @@ static LRESULT timing_window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM
         }
         timing_status = CreateWindowExW(
             0, L"STATIC", L"단위: ms (0~600000)", WS_CHILD | WS_VISIBLE,
-            16, 286, 386, 22,
+            16, 210, 386, 22,
             hwnd, (HANDLE)0, instance, (void *)0
         );
         timing_apply_button = CreateWindowExW(
             0, L"BUTTON", L"적용",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
-            292, 318, 110, 34,
+            292, 242, 110, 34,
             hwnd, (HANDLE)0, instance, (void *)0
         );
         set_control_font(timing_status, app_font);
@@ -1333,7 +1262,7 @@ static LRESULT timing_window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM
         timing_window = (HWND)0;
         timing_apply_button = (HWND)0;
         timing_status = (HWND)0;
-        for (index = 0; index < 7; ++index) timing_edits[index] = (HWND)0;
+        for (index = 0; index < 5; ++index) timing_edits[index] = (HWND)0;
         return 0;
     }
     return DefWindowProcW(hwnd, message, wparam, lparam);
@@ -1350,7 +1279,7 @@ static void show_timing_settings(void) {
     timing_window = CreateWindowExW(
         0, L"TimingSettingsMVP", L"시간 설정 (ms)",
         WS_CAPTION | WS_SYSMENU | WS_VISIBLE,
-        (int)0x80000000u, (int)0x80000000u, 430, 395,
+        (int)0x80000000u, (int)0x80000000u, 430, 320,
         main_window, (HANDLE)0, instance, (void *)0
     );
 }
@@ -1396,18 +1325,6 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
             0, L"BUTTON", L"← 제외",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
             0, 0, 90, 30,
-            hwnd, (HANDLE)0, instance, (void *)0
-        );
-        focus_button = CreateWindowExW(
-            0, L"BUTTON", L"포커스 이동",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
-            0, 0, 110, 30,
-            hwnd, (HANDLE)0, instance, (void *)0
-        );
-        keys_button = CreateWindowExW(
-            0, L"BUTTON", L"지정 키 입력",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
-            0, 0, 110, 30,
             hwnd, (HANDLE)0, instance, (void *)0
         );
         settings_group = CreateWindowExW(
@@ -1487,7 +1404,6 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
         if (listbox) {
             EnumWindows(collect_window, (LPARAM)listbox);
         }
-        active_listbox = listbox;
         png_clipboard_format = RegisterClipboardFormatW(L"PNG");
         if (message_edit) SendMessageW(message_edit, EM_SETLIMITTEXT, 4095, 0);
         set_control_font(source_label, section_font);
@@ -1496,8 +1412,6 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
         set_control_font(selected_listbox, app_font);
         set_control_font(add_button, app_font);
         set_control_font(remove_button, app_font);
-        set_control_font(focus_button, app_font);
-        set_control_font(keys_button, app_font);
         set_control_font(settings_group, section_font);
         set_control_font(image_label, section_font);
         set_control_font(image_status, app_font);
@@ -1548,11 +1462,6 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
         return (LRESULT)surface_brush;
     }
     if (message == WM_COMMAND) {
-        if (((wparam >> 16) & 0xFFFFu) == LBN_SELCHANGE &&
-            ((HWND)lparam == listbox || (HWND)lparam == selected_listbox)) {
-            active_listbox = (HWND)lparam;
-            return 0;
-        }
         if (((wparam >> 16) & 0xFFFFu) == 0) {
             if ((HWND)lparam == add_button) {
                 move_selected_room(listbox, selected_listbox);
@@ -1560,14 +1469,6 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
             }
             if ((HWND)lparam == remove_button) {
                 move_selected_room(selected_listbox, listbox);
-                return 0;
-            }
-            if ((HWND)lparam == focus_button) {
-                focus_selected_window();
-                return 0;
-            }
-            if ((HWND)lparam == keys_button) {
-                type_sequence_to_selected();
                 return 0;
             }
             if ((HWND)lparam == image_paste_button) {
