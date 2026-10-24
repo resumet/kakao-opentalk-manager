@@ -343,10 +343,10 @@
 3. 저장소 루트의 PowerShell에서 같은 버전으로 아래 명령을 한 번 실행함.
 
 ```powershell
-.\scripts\publish-release.ps1 v1.16
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\publish-release.ps1 v1.16
 ```
 
-스크립트가 현재 `main`과 `origin/main`의 일치 여부를 확인하고 `v1.16` annotated tag를 만들어 푸시합니다. 태그 푸시 이후 GitHub Actions가 다음 작업을 자동 실행합니다.
+명령의 실행 정책 우회는 이 저장소의 배포 스크립트를 실행하는 해당 PowerShell 프로세스에만 적용됩니다. 스크립트가 현재 `main`과 `origin/main`의 일치 여부를 확인하고 `v1.16` annotated tag를 만들어 푸시합니다. 태그 푸시 이후 GitHub Actions가 다음 작업을 자동 실행합니다.
 
 1. 태그 시점의 소스를 체크아웃하고 README/AGENTS 버전 일치를 검사함.
 2. GitHub Windows runner의 Visual Studio C++ x64 도구와 Windows SDK로 `KakoMVP-v1.16.exe`를 빌드함.
