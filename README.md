@@ -323,6 +323,7 @@
 - `v*` 태그가 푸시되면 `.github/workflows/release.yml`이 GitHub의 Windows runner에서 MSVC로 Windows x64 standalone EXE를 빌드함.
 - 자동 빌드는 PE의 x64/PE32+/Windows GUI 속성을 검사하고 SHA-256 체크섬을 생성한 뒤 같은 태그의 GitHub Release에 EXE와 체크섬 파일을 첨부함.
 - 실패한 실행을 다시 처리할 수 있도록 기존 태그를 입력하는 수동 실행(`workflow_dispatch`)도 제공하며, 기존 Release가 있으면 자산과 설명을 갱신함.
+- 첫 MSVC 자동 빌드에서 `/NODEFAULTLIB` 구성의 컴파일러 생성 `memset` 참조가 확인되어, CRT 전체를 링크하지 않고 해당 심볼만 제공하는 `crt_shim.c`를 추가함. 제품 로직과 `main.c`는 변경하지 않음.
 
 ### 배포 실행 파일 버전 규칙
 
@@ -370,6 +371,7 @@ KakaoMVP_v5_Codex/
 │   └── Pretendard-SemiBold.ttf # EXE에 포함할 제목 글꼴
 ├── scripts/
 │   └── publish-release.ps1 # 배포 버전 검사, annotated tag 생성 및 푸시
+├── crt_shim.c   # MSVC /NODEFAULTLIB 빌드가 요구하는 최소 memset 구현
 ├── main.c       # v5 기준선에 승인된 v23 기능을 반영한 C 소스
 ├── resources.rc # Pretendard 글꼴 리소스 정의
 ├── LICENSE-Pretendard.txt # Pretendard SIL OFL 1.1 라이선스
@@ -444,7 +446,9 @@ KakaoMVP_v5_Codex/
 
 ```bat
 rc /nologo /fo resources.res resources.rc
-cl /nologo /O2 /GS- /Zl /utf-8 /TC main.c /link resources.res /SUBSYSTEM:WINDOWS /ENTRY:app_entry /NODEFAULTLIB /OUT:KakoMVP-v1.16.exe kernel32.lib user32.lib gdi32.lib
+cl /nologo /c /O2 /GS- /Zl /utf-8 /TC main.c /Fo:main.obj
+cl /nologo /c /Od /Oi- /GS- /Zl /TC crt_shim.c /Fo:crt_shim.obj
+link /nologo main.obj crt_shim.obj resources.res /SUBSYSTEM:WINDOWS /ENTRY:app_entry /NODEFAULTLIB /OUT:KakoMVP-v1.16.exe kernel32.lib user32.lib gdi32.lib
 ```
 
 - `cl`: Microsoft C/C++ 컴파일러. `where cl`로 사용 가능 여부 확인.
@@ -452,8 +456,9 @@ cl /nologo /O2 /GS- /Zl /utf-8 /TC main.c /link resources.res /SUBSYSTEM:WINDOWS
 - `/TC`: C 언어로 컴파일.
 - `rc`: `resources.rc`와 `assets`의 Pretendard TTF 2개를 EXE 리소스로 컴파일. 실행 시 외부 TTF 파일은 필요하지 않음.
 - `/ENTRY:app_entry`와 `/NODEFAULTLIB`: 원본 v5의 독자 진입점/기본 DLL 의존성을 유지.
+- `crt_shim.c`: `/O2`로 컴파일된 `main.c`가 MSVC에서 요구하는 `memset` 심볼만 제공함. `/Od /Oi-`로 별도 컴파일하여 구현 자체가 다시 CRT 호출로 치환되지 않도록 함.
 - `/GS-`: CRT 없이 독자 진입점을 사용하는 **기존 최소 구현을 재현하기 위한 빌드 옵션**. 스택 보호가 꺼지므로 보안 강화가 필요한 정식 배포 시에는 표준 런타임 시작점 및 보안 설정 재검토 필요.
-- **검증 범위:** 이 문서 작성 환경에서는 현행 `main.c`를 `clang-cl` + `lld-link`로 Windows x64 EXE로 재빌드했으며 import DLL이 `kernel32.dll`, `user32.dll`, `gdi32.dll`뿐임을 확인했습니다. 위 **MSVC `cl` 명령 자체는 실제 Windows에서 실행 검증하지 못했으므로** 빌드 오류가 나면 컴파일러·링커 출력에 따라 조정해야 합니다.
+- **검증 범위:** 이 문서 작성 환경에서는 현행 `main.c`를 `clang-cl` + `lld-link`로 Windows x64 EXE로 재빌드했으며 import DLL이 `kernel32.dll`, `user32.dll`, `gdi32.dll`뿐임을 확인했습니다. GitHub Windows runner의 MSVC 검증 결과는 GitHub Release 자동화 기록에 별도로 반영합니다.
 
 ### `main.c` 작업상 주의
 
