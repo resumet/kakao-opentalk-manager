@@ -715,7 +715,7 @@ static BOOL type_content_to_chat(HWND target, const wchar_t *text) {
             return 0;
         }
         append_log(L"[진행] 이미지를 채팅 입력칸에 붙여넣었습니다.\r\n");
-        Sleep(1000);
+        Sleep(500);
         if (GetForegroundWindow() != target || !send_enter()) {
             append_log(L"[실패] 이미지 전송용 Enter 입력에 실패했습니다.\r\n");
             return 0;
