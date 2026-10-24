@@ -134,6 +134,7 @@ __declspec(dllimport) UINT SendInput(UINT, INPUT *, int);
 __declspec(dllimport) HWND GetForegroundWindow(void);
 __declspec(dllimport) BOOL IsWindowEnabled(HWND);
 __declspec(dllimport) BOOL GetWindowRect(HWND, RECT *);
+__declspec(dllimport) HWND GetWindow(HWND, UINT);
 __declspec(dllimport) BOOL GetCursorPos(POINT *);
 __declspec(dllimport) BOOL SetCursorPos(int, int);
 __declspec(dllimport) int GetWindowTextW(HWND, LPWSTR, int);
@@ -200,6 +201,7 @@ __declspec(dllimport) int StretchDIBits(HDC, int, int, int, int, int, int, int, 
 #define LB_ERRSPACE           (-2)
 #define LBN_SELCHANGE         1u
 #define SW_RESTORE            9
+#define GW_OWNER              4u
 #define INPUT_MOUSE           0u
 #define INPUT_KEYBOARD        1u
 #define MOUSEEVENTF_LEFTDOWN  0x0002u
@@ -473,11 +475,18 @@ static BOOL prefix_ignore_ascii_case(const wchar_t *s, const wchar_t *prefix) {
     return 1;
 }
 
-/* KakaoTalk draws the clipboard confirmation as a custom overlay inside the
- * room window, without exposing its title or send action as child HWNDs or UI
- * Automation elements. Click the send row shown at the horizontal center and
- * 78% of the room window height, then restore the user's cursor position. */
+/* KakaoTalk shows the clipboard confirmation in an untitled owned popup and
+ * disables the room while that popup is active. Accept only the foreground
+ * popup directly owned by the target room and belonging to the same process.
+ * Its send row is centered 25 pixels above the popup bottom. Keep the prior
+ * in-room overlay position as a fallback for KakaoTalk layouts without a
+ * separate popup, then restore the user's cursor position after the click. */
 static BOOL click_image_send_overlay(HWND target) {
+    HWND foreground;
+    HWND owner;
+    DWORD target_process = 0;
+    DWORD foreground_process = 0;
+    RECT target_bounds;
     RECT bounds;
     POINT original_cursor;
     INPUT events[2] = {0};
@@ -487,13 +496,30 @@ static BOOL click_image_send_overlay(HWND target) {
     int height;
     int click_x;
     int click_y;
-    if (!IsWindow(target) || !IsWindowVisible(target) || !IsWindowEnabled(target)) return 0;
-    if (GetForegroundWindow() != target || !GetWindowRect(target, &bounds)) return 0;
+    if (!IsWindow(target) || !IsWindowVisible(target) ||
+        !GetWindowRect(target, &target_bounds)) return 0;
+    foreground = GetForegroundWindow();
+    if (foreground == target) {
+        if (!IsWindowEnabled(target)) return 0;
+        bounds = target_bounds;
+        click_y = bounds.top + (int)((long long)(bounds.bottom - bounds.top) * 78 / 100);
+    } else {
+        if (!foreground || !IsWindow(foreground) || !IsWindowVisible(foreground) ||
+            !IsWindowEnabled(foreground)) return 0;
+        GetWindowThreadProcessId(target, &target_process);
+        GetWindowThreadProcessId(foreground, &foreground_process);
+        owner = GetWindow(foreground, GW_OWNER);
+        if (!target_process || foreground_process != target_process || owner != target ||
+            !GetWindowRect(foreground, &bounds)) return 0;
+        if (bounds.left < target_bounds.left || bounds.top < target_bounds.top ||
+            bounds.right > target_bounds.right || bounds.bottom > target_bounds.bottom) return 0;
+        click_y = bounds.bottom - 25;
+    }
     width = bounds.right - bounds.left;
     height = bounds.bottom - bounds.top;
     if (width < 200 || height < 300 || !GetCursorPos(&original_cursor)) return 0;
     click_x = bounds.left + width / 2;
-    click_y = bounds.top + (int)((long long)height * 78 / 100);
+    if (click_y <= bounds.top || click_y >= bounds.bottom) return 0;
     if (!SetCursorPos(click_x, click_y)) return 0;
     events[0].type = INPUT_MOUSE;
     events[0].data.mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
