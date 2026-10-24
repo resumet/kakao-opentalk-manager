@@ -324,6 +324,9 @@
 - 자동 빌드는 PE의 x64/PE32+/Windows GUI 속성을 검사하고 SHA-256 체크섬을 생성한 뒤 같은 태그의 GitHub Release에 EXE와 체크섬 파일을 첨부함.
 - 실패한 실행을 다시 처리할 수 있도록 기존 태그를 입력하는 수동 실행(`workflow_dispatch`)도 제공하며, 기존 Release가 있으면 자산과 설명을 갱신함.
 - 첫 MSVC 자동 빌드에서 `/NODEFAULTLIB` 구성의 컴파일러 생성 `memset` 참조가 확인되어, CRT 전체를 링크하지 않고 해당 심볼만 제공하는 `crt_shim.c`를 추가함. 제품 로직과 `main.c`는 변경하지 않음.
+- 수정 후 [GitHub Actions v1.16 자동 배포](https://github.com/resumet/kakao-opentalk-manager/actions/runs/40115052981)가 성공했으며 [KakoMVP v1.16 Release](https://github.com/resumet/kakao-opentalk-manager/releases/tag/v1.16)를 게시함.
+- Release 자산 `KakoMVP-v1.16.exe`는 5,425,664바이트이며 GitHub가 계산한 SHA-256과 함께 생성된 체크섬은 `2e328fdb06870d929a03886ffa2bdce6635fa441b47d5d435aa0924edf7da4f7`임.
+- 자동 빌드와 PE 형식 검사는 성공했으며, Release EXE의 실제 카카오톡 대화방 동작은 **미검증**.
 
 ### 배포 실행 파일 버전 규칙
 
@@ -537,5 +540,5 @@ link /nologo main.obj crt_shim.obj resources.res /SUBSYSTEM:WINDOWS /ENTRY:app_e
 - 기준선 `main.c`: **v5 롤백 ZIP 내부 원본과 바이트 단위 동일한 파일**
 - 원본 SHA-256: `ffb628b6c0cebc398baaecd63efe8355b20a53bd24465cd1315bc067f40cf273`
 - 기존 v5 EXE SHA-256: `7a74da6d2cc680f26eab8f2a20fadbe564c821534be01f8c08b4dccb4d806ce8`
-- 현재 `KakoMVP-v1.16.exe` SHA-256: `57b876bf4e382df1eb09e80eeff8891fb0c088da9ac7cf3904cbdcc2a9c77222`
+- GitHub Release의 현재 `KakoMVP-v1.16.exe` SHA-256: `2e328fdb06870d929a03886ffa2bdce6635fa441b47d5d435aa0924edf7da4f7`
 - 작업 시점: 2026-10-25
