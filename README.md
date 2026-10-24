@@ -319,6 +319,7 @@
 
 - 제품 소스와 배포 버전은 변경하지 않고 v23 / v1.16을 유지함.
 - `scripts/publish-release.ps1`을 추가해 `main`의 커밋·푸시 상태, 작업 트리, README/AGENTS 배포 버전 및 기존 태그 유무를 검사한 뒤 annotated tag를 생성하고 푸시하도록 구성함.
+- 기본 Windows PowerShell 5.1에서도 UTF-8 스크립트 인코딩 오인 없이 실행되도록 배포 스크립트의 실행 문자열을 ASCII로 구성함.
 - `v*` 태그가 푸시되면 `.github/workflows/release.yml`이 GitHub의 Windows runner에서 MSVC로 Windows x64 standalone EXE를 빌드함.
 - 자동 빌드는 PE의 x64/PE32+/Windows GUI 속성을 검사하고 SHA-256 체크섬을 생성한 뒤 같은 태그의 GitHub Release에 EXE와 체크섬 파일을 첨부함.
 - 실패한 실행을 다시 처리할 수 있도록 기존 태그를 입력하는 수동 실행(`workflow_dispatch`)도 제공하며, 기존 Release가 있으면 자산과 설명을 갱신함.
