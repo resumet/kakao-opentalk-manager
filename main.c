@@ -210,6 +210,7 @@ __declspec(dllimport) int StretchDIBits(HDC, int, int, int, int, int, int, int, 
 #define ES_NUMBER             0x2000u
 #define LBS_NOTIFY            0x0001u
 #define LBS_NOINTEGRALHEIGHT  0x0100u
+#define LBS_EXTENDEDSEL       0x0800u
 #define WM_CREATE             0x0001u
 #define WM_DESTROY            0x0002u
 #define WM_SIZE               0x0005u
@@ -231,14 +232,16 @@ __declspec(dllimport) int StretchDIBits(HDC, int, int, int, int, int, int, int, 
 #define BM_GETCHECK           0x00F0u
 #define LB_ADDSTRING          0x0180u
 #define LB_DELETESTRING       0x0182u
-#define LB_SETCURSEL          0x0186u
-#define LB_GETCURSEL          0x0188u
+#define LB_SETSEL             0x0185u
 #define LB_GETTEXT            0x0189u
 #define LB_GETCOUNT           0x018Bu
+#define LB_GETSELCOUNT        0x0190u
+#define LB_GETSELITEMS        0x0191u
 #define LB_GETITEMDATA        0x0199u
 #define LB_SETITEMDATA        0x019Au
 #define LB_ERR                (-1)
 #define LB_ERRSPACE           (-2)
+#define LBN_DBLCLK            2u
 #define BST_CHECKED           1u
 #define SW_RESTORE            9
 #define SW_SHOW               5
@@ -259,6 +262,7 @@ __declspec(dllimport) int StretchDIBits(HDC, int, int, int, int, int, int, int, 
 #define NULL_PEN              8
 #define IDC_ARROW             32512u
 #define PROCESS_QUERY_LIMITED_INFORMATION 0x1000u
+#define GMEM_FIXED            0x0000u
 #define GMEM_MOVEABLE         0x0002u
 #define CF_DIB                8u
 #define CF_DIBV5              17u
@@ -872,31 +876,74 @@ static HWND chat_window_at(HWND room_list, LRESULT index) {
     return target;
 }
 
-static void move_selected_room(HWND from, HWND to) {
+static void move_selected_rooms(HWND from, HWND to) {
     wchar_t title[512];
-    LRESULT index;
-    LRESULT item_data;
+    int *indices;
+    LRESULT selected_count;
+    LRESULT moved_count;
+    LRESULT source_index;
     LRESULT new_index;
+    LRESULT target_count;
+    LRESULT item_data;
+    LRESULT index;
     if (!from || !to) return;
-    index = SendMessageW(from, LB_GETCURSEL, 0, 0);
-    if (index == LB_ERR) return;
-    item_data = SendMessageW(from, LB_GETITEMDATA, (WPARAM)index, 0);
-    if (item_data == LB_ERR) return;
-    if (SendMessageW(from, LB_GETTEXT, (WPARAM)index, (LPARAM)title) == LB_ERR) return;
-    new_index = SendMessageW(to, LB_ADDSTRING, 0, (LPARAM)title);
-    if (new_index == LB_ERR || new_index == LB_ERRSPACE) return;
-    SendMessageW(to, LB_SETITEMDATA, (WPARAM)new_index, item_data);
-    SendMessageW(from, LB_DELETESTRING, (WPARAM)index, 0);
-    SendMessageW(to, LB_SETCURSEL, (WPARAM)new_index, 0);
-    if (to == selected_listbox) {
-        append_log(L"[선택] ");
-        append_log(title);
-        append_log(L"\r\n");
-    } else {
-        append_log(L"[제외] ");
+    selected_count = SendMessageW(from, LB_GETSELCOUNT, 0, 0);
+    if (selected_count == LB_ERR || selected_count <= 0) return;
+    indices = (int *)GlobalAlloc(
+        GMEM_FIXED, (unsigned long long)selected_count * sizeof(int)
+    );
+    if (!indices) {
+        append_log(L"[실패] 선택한 대화방 목록을 준비하지 못했습니다.\r\n");
+        return;
+    }
+    moved_count = SendMessageW(
+        from, LB_GETSELITEMS, (WPARAM)selected_count, (LPARAM)indices
+    );
+    if (moved_count == LB_ERR || moved_count <= 0) {
+        GlobalFree((HGLOBAL)indices);
+        return;
+    }
+
+    target_count = SendMessageW(to, LB_GETCOUNT, 0, 0);
+    if (target_count == LB_ERR) {
+        GlobalFree((HGLOBAL)indices);
+        return;
+    }
+    SendMessageW(to, LB_SETSEL, 0, (LPARAM)-1);
+    for (index = 0; index < moved_count; ++index) {
+        source_index = indices[index];
+        item_data = SendMessageW(from, LB_GETITEMDATA, (WPARAM)source_index, 0);
+        if (item_data == LB_ERR ||
+            SendMessageW(from, LB_GETTEXT, (WPARAM)source_index, (LPARAM)title) == LB_ERR) {
+            break;
+        }
+        new_index = SendMessageW(to, LB_ADDSTRING, 0, (LPARAM)title);
+        if (new_index == LB_ERR || new_index == LB_ERRSPACE) break;
+        if (SendMessageW(to, LB_SETITEMDATA, (WPARAM)new_index, item_data) == LB_ERR) {
+            break;
+        }
+        SendMessageW(to, LB_SETSEL, 1, (LPARAM)new_index);
+    }
+    if (index != moved_count) {
+        while (SendMessageW(to, LB_GETCOUNT, 0, 0) > target_count) {
+            SendMessageW(to, LB_DELETESTRING, (WPARAM)target_count, 0);
+        }
+        append_log(L"[실패] 선택한 대화방을 목록 사이에서 이동하지 못했습니다.\r\n");
+        GlobalFree((HGLOBAL)indices);
+        return;
+    }
+
+    for (index = 0; index < moved_count; ++index) {
+        title[0] = 0;
+        SendMessageW(from, LB_GETTEXT, (WPARAM)indices[index], (LPARAM)title);
+        append_log(to == selected_listbox ? L"[선택] " : L"[제외] ");
         append_log(title);
         append_log(L"\r\n");
     }
+    for (index = moved_count; index > 0; --index) {
+        SendMessageW(from, LB_DELETESTRING, (WPARAM)indices[index - 1], 0);
+    }
+    GlobalFree((HGLOBAL)indices);
 }
 
 /* Win32 SendInput KEYEVENTF_UNICODE generates WM_CHAR in the target editor,
@@ -1326,14 +1373,14 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
         listbox = CreateWindowExW(
             0, L"LISTBOX", L"",
             WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_TABSTOP | WS_BORDER |
-                LBS_NOTIFY | LBS_NOINTEGRALHEIGHT,
+                LBS_NOTIFY | LBS_NOINTEGRALHEIGHT | LBS_EXTENDEDSEL,
             0, 0, 100, 100,
             hwnd, (HANDLE)0, instance, (void *)0
         );
         selected_listbox = CreateWindowExW(
             0, L"LISTBOX", L"",
             WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_TABSTOP | WS_BORDER |
-                LBS_NOTIFY | LBS_NOINTEGRALHEIGHT,
+                LBS_NOTIFY | LBS_NOINTEGRALHEIGHT | LBS_EXTENDEDSEL,
             0, 0, 100, 100,
             hwnd, (HANDLE)0, instance, (void *)0
         );
@@ -1491,13 +1538,23 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
         return (LRESULT)surface_brush;
     }
     if (message == WM_COMMAND) {
+        if (((wparam >> 16) & 0xFFFFu) == LBN_DBLCLK) {
+            if ((HWND)lparam == listbox) {
+                move_selected_rooms(listbox, selected_listbox);
+                return 0;
+            }
+            if ((HWND)lparam == selected_listbox) {
+                move_selected_rooms(selected_listbox, listbox);
+                return 0;
+            }
+        }
         if (((wparam >> 16) & 0xFFFFu) == 0) {
             if ((HWND)lparam == add_button) {
-                move_selected_room(listbox, selected_listbox);
+                move_selected_rooms(listbox, selected_listbox);
                 return 0;
             }
             if ((HWND)lparam == remove_button) {
-                move_selected_room(selected_listbox, listbox);
+                move_selected_rooms(selected_listbox, listbox);
                 return 0;
             }
             if ((HWND)lparam == image_paste_button) {
