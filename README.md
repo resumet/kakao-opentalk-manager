@@ -74,13 +74,19 @@
 - 단일 행 입력창과 **[목록에 내용 입력]** 버튼을 추가하여 선택 목록 순서대로 같은 문구를 입력하도록 구현함.
 - 순회 입력은 각 방마다 기존 대상·포커스 검증을 수행하고, 실패 시 즉시 중단하며 마지막 Enter를 추가하지 않음.
 - 기존 **[포커스 이동]**, **[지정 키 입력]**, `@` → `Enter` → `가나다` 흐름은 유지함.
-- LLVM 23.1.4 `clang-cl` + `lld-link` Windows x64 standalone 빌드 성공.
+- LLVM 23.1.4 `clang-cl` + `lld-link`로 `KakoMVP-v1.0.exe` Windows x64 standalone 빌드 성공.
 - PE 검사 결과 `COFF-x86-64`, Windows GUI이며 import DLL은 `KERNEL32.dll`, `USER32.dll`, `GDI32.dll`만 확인됨.
 - 실행 파일 SHA-256: `1f3c40e5c27c528ea70fa2858d8f67eca7cd83c0ff04fcaa79051425d7ff19df`
 - 시작 점검: 프로세스가 2초 이상 유지되고 ListBox 2개, Button 5개, Edit 1개, Static 3개가 생성됨을 확인.
 - 가상 목록 항목으로 선택 목록 추가·제외 양방향 이동을 확인함.
 - 실제 카카오톡 입력칸 대상의 순회 문구 입력은 테스트용 대화방에서 **미검증**.
 - 코드 서명은 적용하지 않음.
+
+### 배포 실행 파일 버전 규칙
+
+- 현재 배포 파일: `KakoMVP-v1.0.exe`
+- 구현 이력 버전(v7)과 사용자 배포 파일 버전(v1.0)은 별도로 관리함.
+- 이후 실행 파일은 `KakoMVP-v<배포 버전>.exe` 형식으로 생성하고 README에 해당 버전과 SHA-256을 기록함.
 
 ### Git 버전 관리
 
@@ -94,12 +100,12 @@
 KakaoMVP_v5_Codex/
 ├── .gitattributes # C/Markdown LF 및 EXE 바이너리 취급 고정
 ├── main.c       # v5 기준선에 승인된 v7 기능을 반영한 C 소스
-├── KakaoMVP.exe # v7 Windows x64 standalone 실행 파일
+├── KakoMVP-v1.0.exe # v7 Windows x64 standalone 실행 파일(배포 v1.0)
 ├── README.md    # 구현 이력, 빌드·검증·제약사항
 └── AGENTS.md    # Codex가 자동으로 읽을 수 있는 개발 규칙
 ```
 
-이 폴더는 소스 중심 작업 폴더이며, 현재는 요청에 따라 빌드한 `KakaoMVP.exe`도 함께 포함합니다.
+이 폴더는 소스 중심 작업 폴더이며, 현재는 요청에 따라 빌드한 `KakoMVP-v1.0.exe`도 함께 포함합니다.
 
 ## 5. 현재 소스 구조 (`main.c`)
 
@@ -144,7 +150,7 @@ KakaoMVP_v5_Codex/
 ### MSVC 빌드 명령 예시 (Windows x64)
 
 ```bat
-cl /nologo /O2 /GS- /Zl /utf-8 /TC main.c /link /SUBSYSTEM:WINDOWS /ENTRY:app_entry /NODEFAULTLIB /OUT:KakaoMVP.exe kernel32.lib user32.lib gdi32.lib
+cl /nologo /O2 /GS- /Zl /utf-8 /TC main.c /link /SUBSYSTEM:WINDOWS /ENTRY:app_entry /NODEFAULTLIB /OUT:KakoMVP-v1.0.exe kernel32.lib user32.lib gdi32.lib
 ```
 
 - `cl`: Microsoft C/C++ 컴파일러. `where cl`로 사용 가능 여부 확인.
@@ -213,5 +219,5 @@ cl /nologo /O2 /GS- /Zl /utf-8 /TC main.c /link /SUBSYSTEM:WINDOWS /ENTRY:app_en
 - 기준선 `main.c`: **v5 롤백 ZIP 내부 원본과 바이트 단위 동일한 파일**
 - 원본 SHA-256: `ffb628b6c0cebc398baaecd63efe8355b20a53bd24465cd1315bc067f40cf273`
 - 기존 v5 EXE SHA-256: `7a74da6d2cc680f26eab8f2a20fadbe564c821534be01f8c08b4dccb4d806ce8`
-- 현재 v7 EXE SHA-256: `1f3c40e5c27c528ea70fa2858d8f67eca7cd83c0ff04fcaa79051425d7ff19df`
+- 현재 `KakoMVP-v1.0.exe` SHA-256: `1f3c40e5c27c528ea70fa2858d8f67eca7cd83c0ff04fcaa79051425d7ff19df`
 - 작업 시점: 2026-10-24
