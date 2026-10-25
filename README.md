@@ -365,7 +365,12 @@
 - 검색 목록 상단에 **[다시 불러오기]** 버튼을 추가함. 검색 목록만 비운 뒤 현재 열린 카카오톡 대화창을 다시 탐지하고 선택 목록에 있는 HWND는 중복 수집하지 않음.
 - 메시지 입력 영역에 **메시지 작성 미리보기** 제목, 안내 문구, 둥근 흰색 카드 배경을 적용함. 기존 여러 줄 입력, 최대 길이, 체크박스 및 전송 동작은 변경하지 않음.
 - 제목, 프로그램 정보 및 업데이트 비교용 버전을 v1.20으로 갱신함.
-- GitHub Windows runner 빌드와 Release 결과는 자동 배포 후 이 절에 추가 기록함.
+- [GitHub Actions v1.20 자동 배포](https://github.com/resumet/kakao-opentalk-manager/actions/runs/40153857379)에서 MSVC Windows x64 standalone 빌드와 PE 형식 검사가 성공했으며 [KakoMVP v1.20 Release](https://github.com/resumet/kakao-opentalk-manager/releases/tag/v1.20)를 게시함.
+- Release 자산 `KakoMVP-v1.20.exe`는 5,434,368바이트이고 SHA-256은 `d01b9c7a4eae6446ad0d4639f9851fc629669130f346d4c50e99b61014827e24`임.
+- 배포 EXE를 다시 내려받아 SHA-256 일치를 확인했고 PE 검사 결과 `IMAGE_FILE_MACHINE_AMD64`, PE32+, Windows GUI이며 import DLL은 `KERNEL32.dll`, `USER32.dll`, `GDI32.dll`, `WINHTTP.dll`, `SHELL32.dll`뿐임.
+- 배포 EXE 자동 UI 점검에서 테스트 항목 2개의 다중 이동 후 개수가 `0개/2개`로 갱신되고 문자열과 34px owner-draw 항목 스타일이 유지됨을 확인함. **[다시 불러오기]** 후에도 선택 목록 2개가 유지되고 검색 목록 임시 항목이 제거되며 완료 로그가 기록됨을 확인함.
+- 화면 캡처 점검에서 선택 항목 사이의 구분선, 선택 배경, **메시지 작성 미리보기** 제목과 둥근 흰색 카드 안의 다중행 입력창 배치를 확인함.
+- 실제 카카오톡 대화창을 새로 연 상태의 재탐지와 실제 메시지 전송은 **미검증**.
 
 ### 2026-10-25 저장소 배포 정책 변경
 
@@ -616,5 +621,5 @@ link /nologo main.obj crt_shim.obj resources.res /SUBSYSTEM:WINDOWS /ENTRY:app_e
 - 기준선 `main.c`: **v5 롤백 ZIP 내부 원본과 바이트 단위 동일한 파일**
 - 원본 SHA-256: `ffb628b6c0cebc398baaecd63efe8355b20a53bd24465cd1315bc067f40cf273`
 - 기존 v5 EXE SHA-256: `7a74da6d2cc680f26eab8f2a20fadbe564c821534be01f8c08b4dccb4d806ce8`
-- GitHub Release의 현재 배포 대상: `KakoMVP-v1.20.exe` (자동 배포 후 SHA-256 기록)
+- GitHub Release의 현재 배포 대상: `KakoMVP-v1.20.exe` (SHA-256: `d01b9c7a4eae6446ad0d4639f9851fc629669130f346d4c50e99b61014827e24`)
 - 작업 시점: 2026-10-25
