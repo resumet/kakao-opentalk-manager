@@ -337,7 +337,11 @@
 - 메인 화면의 **[목록에 내용 입력]** 버튼을 제거된 시간 설정 버튼 자리로 올려 불필요한 빈 공간을 줄임.
 - 제목, 프로그램 정보 및 업데이트 비교용 버전을 v1.18로 갱신함.
 - 기존 목록 탐지·목록 이동·이미지·멘션·메시지 입력 순서와 기본 대기값은 변경하지 않음.
-- GitHub Windows runner 빌드와 Release 결과는 자동 배포 후 이 절에 추가 기록함.
+- [GitHub Actions v1.18 자동 배포](https://github.com/resumet/kakao-opentalk-manager/actions/runs/40148158877)에서 MSVC Windows x64 standalone 빌드와 PE 형식 검사가 성공했으며 [KakoMVP v1.18 Release](https://github.com/resumet/kakao-opentalk-manager/releases/tag/v1.18)를 게시함.
+- Release 자산 `KakoMVP-v1.18.exe`는 5,430,784바이트이고 SHA-256은 `fd6421735ac49e59de61ab549360aac68c0c839c43423fad3a90543490b49b54`임.
+- 배포 EXE를 다시 내려받아 SHA-256 일치를 확인했고 PE 검사 결과 `IMAGE_FILE_MACHINE_AMD64`, PE32+, Windows GUI이며 import DLL은 `KERNEL32.dll`, `USER32.dll`, `GDI32.dll`, `WINHTTP.dll`, `SHELL32.dll`뿐임.
+- 배포 EXE 자동 UI 점검에서 v1.18 제목, 메인 화면의 **[시간 설정]** 버튼 제거, **설정 → 옵션**의 입력칸 5개와 **[저장하기]** 버튼을 확인함. 유효하지 않은 값은 옵션 창을 유지했고, 유효한 값을 저장하면 창이 닫혔으며 같은 실행 중 다시 연 옵션 창에서 저장값이 유지됨을 확인함.
+- 실제 카카오톡 대화방을 대상으로 한 이미지·멘션·메시지 전송 동작은 **미검증**.
 
 ### 2026-10-25 저장소 배포 정책 변경
 
@@ -580,5 +584,5 @@ link /nologo main.obj crt_shim.obj resources.res /SUBSYSTEM:WINDOWS /ENTRY:app_e
 - 기준선 `main.c`: **v5 롤백 ZIP 내부 원본과 바이트 단위 동일한 파일**
 - 원본 SHA-256: `ffb628b6c0cebc398baaecd63efe8355b20a53bd24465cd1315bc067f40cf273`
 - 기존 v5 EXE SHA-256: `7a74da6d2cc680f26eab8f2a20fadbe564c821534be01f8c08b4dccb4d806ce8`
-- GitHub Release의 현재 배포 대상: `KakoMVP-v1.18.exe` (자동 배포 후 SHA-256 기록)
+- GitHub Release의 현재 배포 대상: `KakoMVP-v1.18.exe` (SHA-256: `fd6421735ac49e59de61ab549360aac68c0c839c43423fad3a90543490b49b54`)
 - 작업 시점: 2026-10-25
