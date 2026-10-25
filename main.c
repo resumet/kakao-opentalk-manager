@@ -137,6 +137,7 @@ __declspec(dllimport) DWORD SizeofResource(HINSTANCE, HRSRC);
 __declspec(dllimport) unsigned short RegisterClassW(const WNDCLASSW *);
 __declspec(dllimport) HWND CreateWindowExW(DWORD, LPCWSTR, LPCWSTR, DWORD, int, int, int, int, HWND, HANDLE, HINSTANCE, void *);
 __declspec(dllimport) LRESULT DefWindowProcW(HWND, UINT, WPARAM, LPARAM);
+__declspec(dllimport) BOOL DestroyWindow(HWND);
 __declspec(dllimport) BOOL EnumWindows(WNDENUMPROC, LPARAM);
 __declspec(dllimport) BOOL EnumChildWindows(HWND, WNDENUMPROC, LPARAM);
 __declspec(dllimport) DWORD GetWindowThreadProcessId(HWND, DWORD *);
@@ -316,8 +317,8 @@ __declspec(dllimport) BOOL WinHttpCloseHandle(HINTERNET);
 #define IDR_PRETENDARD_REGULAR_FONT  101u
 #define IDR_PRETENDARD_SEMIBOLD_FONT 102u
 #define RGB_COLOR(r, g, b)    ((DWORD)((BYTE)(r) | ((DWORD)(BYTE)(g) << 8) | ((DWORD)(BYTE)(b) << 16)))
-#define APP_VERSION           L"v1.17"
-#define APP_TITLE             L"비즈업클래스-카카오단톡 메시지 자동화 (v1.17)"
+#define APP_VERSION           L"v1.18"
+#define APP_TITLE             L"비즈업클래스-카카오단톡 메시지 자동화 (v1.18)"
 #define RELEASE_LATEST_URL    L"https://github.com/resumet/kakao-opentalk-manager/releases/latest"
 
 static HWND listbox;
@@ -330,7 +331,6 @@ static HWND remove_button;
 static HWND message_edit;
 static HWND mention_all_checkbox;
 static HWND send_message_checkbox;
-static HWND timing_button;
 static HWND message_button;
 static HWND settings_group;
 static HWND image_label;
@@ -667,7 +667,7 @@ static void show_program_information(void) {
     MessageBoxW(
         main_window,
         L"비즈업클래스-카카오단톡 메시지 자동화\r\n"
-        L"버전 v1.17\r\n\r\n"
+        L"버전 " APP_VERSION L"\r\n\r\n"
         L"Windows 10/11 x64 단독 실행형",
         L"프로그램 정보",
         MB_OK | MB_ICONINFORMATION
@@ -990,11 +990,8 @@ static void layout_controls(HWND hwnd) {
             settings_x + 15, 388, maximum(0, settings_width - 30), 26, 1
         );
     }
-    if (timing_button) {
-        MoveWindow(timing_button, settings_x + 15, 422, maximum(0, settings_width - 30), 32, 1);
-    }
     if (message_button) {
-        MoveWindow(message_button, settings_x + 15, 462, maximum(0, settings_width - 30), 36, 1);
+        MoveWindow(message_button, settings_x + 15, 422, maximum(0, settings_width - 30), 36, 1);
     }
     if (log_label) {
         MoveWindow(log_label, 10, log_label_y, maximum(0, width - 20), 20, 1);
@@ -1468,7 +1465,7 @@ static void populate_timing_edits(void) {
     }
 }
 
-static void apply_timing_edits(void) {
+static BOOL apply_timing_edits(void) {
     DWORD values[5];
     DWORD *target;
     int index;
@@ -1478,15 +1475,15 @@ static void apply_timing_edits(void) {
                 timing_status, WM_SETTEXT, 0,
                 (LPARAM)L"0~600000 사이의 정수(ms)를 입력해 주세요."
             );
-            return;
+            return 0;
         }
     }
     for (index = 0; index < 5; ++index) {
         target = timing_value_at(index);
         if (target) *target = values[index];
     }
-    SendMessageW(timing_status, WM_SETTEXT, 0, (LPARAM)L"현재 실행에 시간 설정을 적용했습니다.");
-    append_log(L"[설정] 개별 시간 설정을 적용했습니다.\r\n");
+    append_log(L"[설정] 개별 시간 설정을 저장했습니다.\r\n");
+    return 1;
 }
 
 static LRESULT timing_window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
@@ -1525,7 +1522,7 @@ static LRESULT timing_window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM
             hwnd, (HANDLE)0, instance, (void *)0
         );
         timing_apply_button = CreateWindowExW(
-            0, L"BUTTON", L"적용",
+            0, L"BUTTON", L"저장하기",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
             292, 242, 110, 34,
             hwnd, (HANDLE)0, instance, (void *)0
@@ -1537,7 +1534,7 @@ static LRESULT timing_window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM
     }
     if (message == WM_COMMAND && ((wparam >> 16) & 0xFFFFu) == 0 &&
         (HWND)lparam == timing_apply_button) {
-        apply_timing_edits();
+        if (apply_timing_edits()) DestroyWindow(hwnd);
         return 0;
     }
     if (message == WM_DRAWITEM) {
@@ -1685,12 +1682,6 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
             0, 0, 180, 26,
             hwnd, (HANDLE)0, instance, (void *)0
         );
-        timing_button = CreateWindowExW(
-            0, L"BUTTON", L"시간 설정",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
-            0, 0, 150, 32,
-            hwnd, (HANDLE)0, instance, (void *)0
-        );
         message_button = CreateWindowExW(
             0, L"BUTTON", L"목록에 내용 입력",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
@@ -1730,7 +1721,6 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
         set_control_font(message_edit, app_font);
         set_control_font(mention_all_checkbox, app_font);
         set_control_font(send_message_checkbox, app_font);
-        set_control_font(timing_button, app_font);
         set_control_font(message_button, app_font);
         set_control_font(log_label, section_font);
         set_control_font(log_edit, app_font);
@@ -1816,10 +1806,6 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
             }
             if ((HWND)lparam == image_clear_button) {
                 clear_stored_image(1);
-                return 0;
-            }
-            if ((HWND)lparam == timing_button) {
-                show_timing_settings();
                 return 0;
             }
             if ((HWND)lparam == message_button) {
