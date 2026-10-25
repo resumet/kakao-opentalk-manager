@@ -410,7 +410,12 @@
 - `WM_GETMINMAXINFO`에서 메인 창의 최소 추적 크기를 기본 크기와 같은 1120×820px로 지정함. 사용자는 이 크기보다 크게 확대·최대화할 수 있으며 기존 `WM_SIZE` 반응형 배치를 그대로 사용함.
 - 메시지 입력, 목록 관리, 전송 순서와 시간 설정은 변경하지 않음.
 - 제목, 프로그램 정보 및 업데이트 비교용 버전을 v1.23으로 갱신함.
-- GitHub Windows runner 빌드, 배포 EXE 창 크기 자동 점검 및 Release 결과는 자동 배포 후 이 절에 추가 기록함.
+- [GitHub Actions v1.23 자동 배포](https://github.com/resumet/kakao-opentalk-manager/actions/runs/40159496965)에서 MSVC Windows x64 standalone 빌드와 PE 형식 검사가 성공했으며 [KakoMVP v1.23 Release](https://github.com/resumet/kakao-opentalk-manager/releases/tag/v1.23)를 게시함.
+- Release 자산 `KakoMVP-v1.23.exe`는 5,434,880바이트이고 SHA-256은 `54d4fa9a094d8b2c3f65c4e9ab7338277fbb241fd3fa6329c859bafb18daaa57`임.
+- 배포 EXE와 체크섬 파일을 다시 내려받아 SHA-256 일치를 확인했고 PE 검사 결과 `IMAGE_FILE_MACHINE_AMD64`, PE32+, Windows GUI이며 import DLL은 `KERNEL32.dll`, `USER32.dll`, `GDI32.dll`, `WINHTTP.dll`, `SHELL32.dll`뿐임.
+- 배포 EXE의 `WM_GETMINMAXINFO` 응답이 1120×820px임을 확인하고, 실제 마우스로 900×700px까지 축소를 시도했을 때 창이 1120×820px에서 제한됨을 확인함.
+- 창을 1300×900px로 확대한 상태에서 두 목록, 중앙 이동 버튼과 메시지 설정 영역의 화면 좌표를 비교해 서로 겹치지 않음을 확인함. 다시 최소 크기로 축소한 화면 캡처에서도 전체 UI 배치를 확인함.
+- 실제 카카오톡 대화방을 대상으로 한 목록 관리와 메시지·이미지 전송은 이번 크기 변경 검증에서 수행하지 않음.
 
 ### 2026-10-25 저장소 배포 정책 변경
 
@@ -667,5 +672,6 @@ link /nologo main.obj crt_shim.obj resources.res /SUBSYSTEM:WINDOWS /ENTRY:app_e
 - 기준선 `main.c`: **v5 롤백 ZIP 내부 원본과 바이트 단위 동일한 파일**
 - 원본 SHA-256: `ffb628b6c0cebc398baaecd63efe8355b20a53bd24465cd1315bc067f40cf273`
 - 기존 v5 EXE SHA-256: `7a74da6d2cc680f26eab8f2a20fadbe564c821534be01f8c08b4dccb4d806ce8`
-- GitHub Release의 현재 배포 대상: `KakoMVP-v1.23.exe` (자동 배포 후 SHA-256 기록)
+- GitHub Release의 현재 배포 대상: `KakoMVP-v1.23.exe`
+- 현재 배포 EXE SHA-256: `54d4fa9a094d8b2c3f65c4e9ab7338277fbb241fd3fa6329c859bafb18daaa57`
 - 작업 시점: 2026-10-25
