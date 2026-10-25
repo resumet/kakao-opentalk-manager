@@ -322,8 +322,11 @@
 - 업데이트 확인은 사용자 선택 시에만 WinHTTP로 GitHub의 `/releases/latest` 주소를 요청하고 최종 Release 태그를 현재 v1.17과 비교함. 새 버전이면 사용자의 확인 후 기본 브라우저로 최신 Release 페이지를 엶.
 - 프로그램 정보는 프로그램명, 배포 버전, Windows 10/11 x64 단독 실행형 정보를 표시함.
 - 기존 목록 탐지·목록 이동·이미지·멘션·메시지 입력 순서와 대기값은 변경하지 않음.
-- `main.c` 정적 검토와 문서 버전 일치를 확인함. GitHub Windows runner 빌드와 Release 결과는 자동 배포 후 이 절에 추가 기록함.
-- 실제 카카오톡 대화방 동작과 실제 사용자 메뉴 조작은 **미검증**.
+- [GitHub Actions v1.17 자동 배포](https://github.com/resumet/kakao-opentalk-manager/actions/runs/40147876830)에서 MSVC Windows x64 standalone 빌드와 PE 형식 검사가 성공했으며 [KakoMVP v1.17 Release](https://github.com/resumet/kakao-opentalk-manager/releases/tag/v1.17)를 게시함.
+- Release 자산 `KakoMVP-v1.17.exe`는 5,430,784바이트이고 SHA-256은 `fad48020751e682e439731fe690135e4d7648aecf9d52e68f8ece8583aaad8e5`임.
+- 배포 EXE를 다시 내려받아 SHA-256 일치를 확인했고 PE 검사 결과 `IMAGE_FILE_MACHINE_AMD64`, PE32+, Windows GUI이며 import DLL은 `KERNEL32.dll`, `USER32.dll`, `GDI32.dll`, `WINHTTP.dll`, `SHELL32.dll`뿐임.
+- 배포 EXE 시작 점검에서 제목과 **설정/도움말** 메뉴, **옵션** 시간 설정 창, v1.17 **프로그램 정보**, GitHub Release의 v1.17을 반환하는 **업데이트 확인** 결과를 확인함.
+- 실제 카카오톡 대화방을 대상으로 한 이미지·멘션·메시지 전송 동작은 **미검증**.
 
 ### 2026-10-25 저장소 배포 정책 변경
 
@@ -565,5 +568,5 @@ link /nologo main.obj crt_shim.obj resources.res /SUBSYSTEM:WINDOWS /ENTRY:app_e
 - 기준선 `main.c`: **v5 롤백 ZIP 내부 원본과 바이트 단위 동일한 파일**
 - 원본 SHA-256: `ffb628b6c0cebc398baaecd63efe8355b20a53bd24465cd1315bc067f40cf273`
 - 기존 v5 EXE SHA-256: `7a74da6d2cc680f26eab8f2a20fadbe564c821534be01f8c08b4dccb4d806ce8`
-- GitHub Release의 현재 배포 대상: `KakoMVP-v1.17.exe` (자동 배포 후 SHA-256 기록)
+- GitHub Release의 현재 `KakoMVP-v1.17.exe` SHA-256: `fad48020751e682e439731fe690135e4d7648aecf9d52e68f8ece8583aaad8e5`
 - 작업 시점: 2026-10-25
