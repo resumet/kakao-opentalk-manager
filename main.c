@@ -20,6 +20,8 @@ typedef HANDLE HBRUSH;
 typedef HANDLE HDC;
 typedef HANDLE HFONT;
 typedef HANDLE HRSRC;
+typedef HANDLE HMENU;
+typedef HANDLE HINTERNET;
 typedef const wchar_t *LPCWSTR;
 typedef wchar_t *LPWSTR;
 typedef unsigned int UINT;
@@ -188,6 +190,19 @@ __declspec(dllimport) BOOL RoundRect(HDC, int, int, int, int, int, int);
 __declspec(dllimport) HANDLE AddFontMemResourceEx(void *, DWORD, void *, DWORD *);
 __declspec(dllimport) BOOL RemoveFontMemResourceEx(HANDLE);
 __declspec(dllimport) int StretchDIBits(HDC, int, int, int, int, int, int, int, int, const void *, const void *, UINT, DWORD);
+__declspec(dllimport) HMENU CreateMenu(void);
+__declspec(dllimport) HMENU CreatePopupMenu(void);
+__declspec(dllimport) BOOL AppendMenuW(HMENU, UINT, unsigned long long, LPCWSTR);
+__declspec(dllimport) int MessageBoxW(HWND, LPCWSTR, LPCWSTR, UINT);
+__declspec(dllimport) HINSTANCE ShellExecuteW(HWND, LPCWSTR, LPCWSTR, LPCWSTR, LPCWSTR, int);
+__declspec(dllimport) HINTERNET WinHttpOpen(LPCWSTR, DWORD, LPCWSTR, LPCWSTR, DWORD);
+__declspec(dllimport) HINTERNET WinHttpConnect(HINTERNET, LPCWSTR, WORD, DWORD);
+__declspec(dllimport) HINTERNET WinHttpOpenRequest(HINTERNET, LPCWSTR, LPCWSTR, LPCWSTR, LPCWSTR, LPCWSTR *, DWORD);
+__declspec(dllimport) BOOL WinHttpSetTimeouts(HINTERNET, int, int, int, int);
+__declspec(dllimport) BOOL WinHttpSendRequest(HINTERNET, LPCWSTR, DWORD, void *, DWORD, DWORD, unsigned long long);
+__declspec(dllimport) BOOL WinHttpReceiveResponse(HINTERNET, void *);
+__declspec(dllimport) BOOL WinHttpQueryOption(HINTERNET, DWORD, void *, DWORD *);
+__declspec(dllimport) BOOL WinHttpCloseHandle(HINTERNET);
 
 #define WS_OVERLAPPEDWINDOW   0x00CF0000u
 #define WS_VISIBLE            0x10000000u
@@ -282,10 +297,28 @@ __declspec(dllimport) int StretchDIBits(HDC, int, int, int, int, int, int, int, 
 #define FW_SEMIBOLD           600
 #define DEFAULT_CHARSET       1u
 #define CLEARTYPE_QUALITY     5u
+#define MF_STRING             0x0000u
+#define MF_POPUP              0x0010u
+#define MB_OK                 0x00000000u
+#define MB_YESNO              0x00000004u
+#define MB_ICONINFORMATION    0x00000040u
+#define MB_ICONWARNING        0x00000030u
+#define IDYES                 6
+#define SW_SHOWNORMAL         1
+#define WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY 4u
+#define WINHTTP_FLAG_SECURE   0x00800000u
+#define WINHTTP_OPTION_URL    34u
+#define INTERNET_DEFAULT_HTTPS_PORT 443u
+#define IDM_OPTIONS           1001u
+#define IDM_CHECK_UPDATES     1002u
+#define IDM_ABOUT             1003u
 #define RT_RCDATA             10u
 #define IDR_PRETENDARD_REGULAR_FONT  101u
 #define IDR_PRETENDARD_SEMIBOLD_FONT 102u
 #define RGB_COLOR(r, g, b)    ((DWORD)((BYTE)(r) | ((DWORD)(BYTE)(g) << 8) | ((DWORD)(BYTE)(b) << 16)))
+#define APP_VERSION           L"v1.17"
+#define APP_TITLE             L"비즈업클래스-카카오단톡 메시지 자동화 (v1.17)"
+#define RELEASE_LATEST_URL    L"https://github.com/resumet/kakao-opentalk-manager/releases/latest"
 
 static HWND listbox;
 static HWND selected_listbox;
@@ -333,6 +366,69 @@ typedef struct {
 static TimingSettings timings = {1000, 1000, 500, 500, 1500};
 
 static int maximum(int a, int b) { return a > b ? a : b; }
+
+static int wide_length(const wchar_t *text) {
+    int length = 0;
+    if (!text) return 0;
+    while (text[length]) ++length;
+    return length;
+}
+
+static BOOL append_wide(wchar_t *buffer, int capacity, const wchar_t *text) {
+    int used;
+    int index = 0;
+    if (!buffer || capacity <= 0 || !text) return 0;
+    used = wide_length(buffer);
+    while (text[index]) {
+        if (used + index + 1 >= capacity) return 0;
+        buffer[used + index] = text[index];
+        ++index;
+    }
+    buffer[used + index] = 0;
+    return 1;
+}
+
+static const wchar_t *find_wide(const wchar_t *text, const wchar_t *needle) {
+    const wchar_t *start;
+    const wchar_t *left;
+    const wchar_t *right;
+    if (!text || !needle || !*needle) return text;
+    for (start = text; *start; ++start) {
+        left = start;
+        right = needle;
+        while (*left && *right && *left == *right) {
+            ++left;
+            ++right;
+        }
+        if (!*right) return start;
+    }
+    return (const wchar_t *)0;
+}
+
+static int compare_versions(const wchar_t *left, const wchar_t *right) {
+    int component;
+    unsigned int left_value;
+    unsigned int right_value;
+    if (*left == L'v' || *left == L'V') ++left;
+    if (*right == L'v' || *right == L'V') ++right;
+    for (component = 0; component < 4; ++component) {
+        left_value = 0;
+        right_value = 0;
+        while (*left >= L'0' && *left <= L'9') {
+            left_value = left_value * 10u + (unsigned int)(*left - L'0');
+            ++left;
+        }
+        while (*right >= L'0' && *right <= L'9') {
+            right_value = right_value * 10u + (unsigned int)(*right - L'0');
+            ++right;
+        }
+        if (left_value < right_value) return -1;
+        if (left_value > right_value) return 1;
+        if (*left == L'.') ++left;
+        if (*right == L'.') ++right;
+    }
+    return 0;
+}
 
 static void append_log(const wchar_t *text) {
     if (!log_edit || !text) return;
@@ -552,6 +648,144 @@ static BOOL prefix_ignore_ascii_case(const wchar_t *s, const wchar_t *prefix) {
         ++prefix;
     }
     return 1;
+}
+
+static HMENU create_app_menu(void) {
+    HMENU menu_bar = CreateMenu();
+    HMENU settings_menu = CreatePopupMenu();
+    HMENU help_menu = CreatePopupMenu();
+    if (!menu_bar || !settings_menu || !help_menu) return (HMENU)0;
+    AppendMenuW(settings_menu, MF_STRING, IDM_OPTIONS, L"옵션");
+    AppendMenuW(help_menu, MF_STRING, IDM_CHECK_UPDATES, L"업데이트 확인");
+    AppendMenuW(help_menu, MF_STRING, IDM_ABOUT, L"프로그램 정보");
+    AppendMenuW(menu_bar, MF_POPUP, (unsigned long long)settings_menu, L"설정");
+    AppendMenuW(menu_bar, MF_POPUP, (unsigned long long)help_menu, L"도움말");
+    return menu_bar;
+}
+
+static void show_program_information(void) {
+    MessageBoxW(
+        main_window,
+        L"비즈업클래스-카카오단톡 메시지 자동화\r\n"
+        L"버전 v1.17\r\n\r\n"
+        L"Windows 10/11 x64 단독 실행형",
+        L"프로그램 정보",
+        MB_OK | MB_ICONINFORMATION
+    );
+}
+
+static BOOL fetch_latest_version(wchar_t *latest, int capacity) {
+    HINTERNET session = (HINTERNET)0;
+    HINTERNET connection = (HINTERNET)0;
+    HINTERNET request = (HINTERNET)0;
+    wchar_t final_url[1024];
+    const wchar_t *marker = L"/releases/tag/";
+    const wchar_t *version;
+    DWORD url_bytes = (DWORD)sizeof(final_url);
+    int index = 0;
+    BOOL valid = 0;
+
+    if (!latest || capacity < 4) return 0;
+    latest[0] = 0;
+    final_url[0] = 0;
+    final_url[1023] = 0;
+
+    session = WinHttpOpen(
+        APP_TITLE, WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+        (LPCWSTR)0, (LPCWSTR)0, 0
+    );
+    if (!session) goto cleanup;
+    WinHttpSetTimeouts(session, 5000, 5000, 5000, 5000);
+
+    connection = WinHttpConnect(session, L"github.com", INTERNET_DEFAULT_HTTPS_PORT, 0);
+    if (!connection) goto cleanup;
+    request = WinHttpOpenRequest(
+        connection, L"GET",
+        L"/resumet/kakao-opentalk-manager/releases/latest",
+        (LPCWSTR)0, (LPCWSTR)0, (LPCWSTR *)0, WINHTTP_FLAG_SECURE
+    );
+    if (!request) goto cleanup;
+    if (!WinHttpSendRequest(request, (LPCWSTR)0, 0, (void *)0, 0, 0, 0)) goto cleanup;
+    if (!WinHttpReceiveResponse(request, (void *)0)) goto cleanup;
+    if (!WinHttpQueryOption(request, WINHTTP_OPTION_URL, final_url, &url_bytes)) goto cleanup;
+    final_url[1023] = 0;
+
+    version = find_wide(final_url, marker);
+    if (!version) goto cleanup;
+    version += wide_length(marker);
+    while (*version && *version != L'/' && *version != L'?' && *version != L'#') {
+        if (index + 1 >= capacity) goto cleanup;
+        latest[index++] = *version++;
+    }
+    latest[index] = 0;
+    if (index < 2 || (latest[0] != L'v' && latest[0] != L'V')) goto cleanup;
+    for (index = 1; latest[index]; ++index) {
+        if ((latest[index] < L'0' || latest[index] > L'9') && latest[index] != L'.') {
+            goto cleanup;
+        }
+    }
+    valid = 1;
+
+cleanup:
+    if (request) WinHttpCloseHandle(request);
+    if (connection) WinHttpCloseHandle(connection);
+    if (session) WinHttpCloseHandle(session);
+    if (!valid) latest[0] = 0;
+    return valid;
+}
+
+static void check_for_updates(void) {
+    wchar_t latest[32];
+    wchar_t message[512];
+    int answer;
+    append_log(L"[업데이트] GitHub 최신 Release를 확인합니다.\r\n");
+    if (!fetch_latest_version(latest, 32)) {
+        append_log(L"[실패] 업데이트 정보를 확인하지 못했습니다.\r\n");
+        MessageBoxW(
+            main_window,
+            L"업데이트 정보를 확인하지 못했습니다.\r\n"
+            L"인터넷 연결을 확인한 뒤 다시 시도해 주세요.",
+            L"업데이트 확인",
+            MB_OK | MB_ICONWARNING
+        );
+        return;
+    }
+
+    message[0] = 0;
+    if (compare_versions(APP_VERSION, latest) < 0) {
+        append_wide(message, 512, L"새 버전이 있습니다.\r\n\r\n현재 버전: ");
+        append_wide(message, 512, APP_VERSION);
+        append_wide(message, 512, L"\r\n최신 버전: ");
+        append_wide(message, 512, latest);
+        append_wide(message, 512, L"\r\n\r\n다운로드 페이지를 여시겠습니까?");
+        append_log(L"[업데이트] 새 버전을 확인했습니다.\r\n");
+        answer = MessageBoxW(
+            main_window, message, L"업데이트 확인", MB_YESNO | MB_ICONINFORMATION
+        );
+        if (answer == IDYES &&
+            (unsigned long long)ShellExecuteW(
+                main_window, L"open", RELEASE_LATEST_URL,
+                (LPCWSTR)0, (LPCWSTR)0, SW_SHOWNORMAL
+            ) <= 32u) {
+            append_log(L"[실패] 업데이트 다운로드 페이지를 열지 못했습니다.\r\n");
+            MessageBoxW(
+                main_window,
+                L"업데이트 다운로드 페이지를 열지 못했습니다.",
+                L"업데이트 확인",
+                MB_OK | MB_ICONWARNING
+            );
+        }
+        return;
+    }
+
+    append_wide(message, 512, L"현재 최신 버전을 사용 중입니다.\r\n\r\n현재 버전: ");
+    append_wide(message, 512, APP_VERSION);
+    append_wide(message, 512, L"\r\n최신 Release: ");
+    append_wide(message, 512, latest);
+    append_log(L"[업데이트] 현재 버전이 최신 Release와 같거나 더 높습니다.\r\n");
+    MessageBoxW(
+        main_window, message, L"업데이트 확인", MB_OK | MB_ICONINFORMATION
+    );
 }
 
 /* KakaoTalk shows the clipboard confirmation in an untitled owned popup and
@@ -1538,6 +1772,21 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
         return (LRESULT)surface_brush;
     }
     if (message == WM_COMMAND) {
+        if (((wparam >> 16) & 0xFFFFu) == 0 && !(HWND)lparam) {
+            UINT command_id = (UINT)(wparam & 0xFFFFu);
+            if (command_id == IDM_OPTIONS) {
+                show_timing_settings();
+                return 0;
+            }
+            if (command_id == IDM_CHECK_UPDATES) {
+                check_for_updates();
+                return 0;
+            }
+            if (command_id == IDM_ABOUT) {
+                show_program_information();
+                return 0;
+            }
+        }
         if (((wparam >> 16) & 0xFFFFu) == LBN_DBLCLK) {
             if ((HWND)lparam == listbox) {
                 move_selected_rooms(listbox, selected_listbox);
@@ -1604,6 +1853,7 @@ void app_entry(void) {
     WNDCLASSW wc;
     WNDCLASSW preview_class;
     WNDCLASSW timing_class;
+    HMENU app_menu;
     HWND hwnd;
     MSG msg;
     HRSRC regular_font_resource;
@@ -1702,11 +1952,12 @@ void app_entry(void) {
     wc.lpszClassName = L"WindowListMVP";
     RegisterClassW(&wc);
 
+    app_menu = create_app_menu();
     hwnd = CreateWindowExW(
-        0, wc.lpszClassName, L"카카오톡 대화창 목록",
+        0, wc.lpszClassName, APP_TITLE,
         WS_OVERLAPPEDWINDOW | WS_VISIBLE,
         (int)0x80000000u, (int)0x80000000u, 1120, 700,
-        (HWND)0, (HANDLE)0, instance, (void *)0
+        (HWND)0, (HANDLE)app_menu, instance, (void *)0
     );
     if (!hwnd) ExitProcess(1);
     while (GetMessageW(&msg, (HWND)0, 0, 0) > 0) {

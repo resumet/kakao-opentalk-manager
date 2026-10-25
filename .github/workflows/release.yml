@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing version tag to build and publish (for example, v1.16)
+        description: Existing version tag to build and publish (for example, v1.17)
         required: true
         type: string
 
@@ -81,7 +81,7 @@ jobs:
           if errorlevel 1 exit /b 1
           cl /nologo /c /Od /Oi- /GS- /Zl /TC crt_shim.c /Fo:crt_shim.obj
           if errorlevel 1 exit /b 1
-          link /nologo main.obj crt_shim.obj resources.res /SUBSYSTEM:WINDOWS /ENTRY:app_entry /NODEFAULTLIB /OUT:"%EXE_NAME%" kernel32.lib user32.lib gdi32.lib
+          link /nologo main.obj crt_shim.obj resources.res /SUBSYSTEM:WINDOWS /ENTRY:app_entry /NODEFAULTLIB /OUT:"%EXE_NAME%" kernel32.lib user32.lib gdi32.lib winhttp.lib shell32.lib
           if errorlevel 1 exit /b 1
           "@ | Set-Content -LiteralPath build-release.cmd -Encoding ascii
 
