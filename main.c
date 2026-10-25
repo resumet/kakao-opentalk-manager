@@ -150,6 +150,7 @@ __declspec(dllimport) BOOL SetForegroundWindow(HWND);
 __declspec(dllimport) BOOL AttachThreadInput(DWORD, DWORD, BOOL);
 __declspec(dllimport) HWND SetFocus(HWND);
 __declspec(dllimport) HWND GetFocus(void);
+__declspec(dllimport) short GetKeyState(int);
 __declspec(dllimport) UINT SendInput(UINT, INPUT *, int);
 __declspec(dllimport) HWND GetForegroundWindow(void);
 __declspec(dllimport) BOOL IsWindowEnabled(HWND);
@@ -234,12 +235,14 @@ __declspec(dllimport) BOOL WinHttpCloseHandle(HINTERNET);
 #define WM_ERASEBKGND         0x0014u
 #define WM_DRAWITEM           0x002Bu
 #define WM_SETTEXT            0x000Cu
+#define WM_KEYDOWN            0x0100u
 #define WM_COMMAND            0x0111u
 #define WM_SETFONT            0x0030u
 #define WM_CTLCOLOREDIT       0x0133u
 #define WM_CTLCOLORLISTBOX    0x0134u
 #define WM_CTLCOLORBTN        0x0135u
 #define WM_CTLCOLORSTATIC     0x0138u
+#define WM_LBUTTONDOWN        0x0201u
 #define EM_SETLIMITTEXT       0x00C5u
 #define EM_SETSEL             0x00B1u
 #define EM_REPLACESEL         0x00C2u
@@ -317,8 +320,8 @@ __declspec(dllimport) BOOL WinHttpCloseHandle(HINTERNET);
 #define IDR_PRETENDARD_REGULAR_FONT  101u
 #define IDR_PRETENDARD_SEMIBOLD_FONT 102u
 #define RGB_COLOR(r, g, b)    ((DWORD)((BYTE)(r) | ((DWORD)(BYTE)(g) << 8) | ((DWORD)(BYTE)(b) << 16)))
-#define APP_VERSION           L"v1.18"
-#define APP_TITLE             L"비즈업클래스-카카오단톡 메시지 자동화 (v1.18)"
+#define APP_VERSION           L"v1.19"
+#define APP_TITLE             L"비즈업클래스-카카오단톡 메시지 자동화 (v1.19)"
 #define RELEASE_LATEST_URL    L"https://github.com/resumet/kakao-opentalk-manager/releases/latest"
 
 static HWND listbox;
@@ -366,6 +369,8 @@ typedef struct {
 static TimingSettings timings = {1000, 1000, 500, 500, 1500};
 
 static int maximum(int a, int b) { return a > b ? a : b; }
+
+static void paste_clipboard_image(void);
 
 static int wide_length(const wchar_t *text) {
     int length = 0;
@@ -520,6 +525,16 @@ static BOOL stored_dib_details(
 }
 
 static LRESULT image_preview_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
+    if (message == WM_LBUTTONDOWN) {
+        SetFocus(hwnd);
+        return 0;
+    }
+    if (message == WM_KEYDOWN && wparam == VK_V &&
+        GetKeyState(VK_CONTROL) < 0 &&
+        !(lparam & ((LPARAM)1 << 30))) {
+        paste_clipboard_image();
+        return 0;
+    }
     if (message == WM_PAINT) {
         PAINTSTRUCT paint;
         RECT client;
@@ -608,6 +623,14 @@ static BOOL capture_clipboard_image(void) {
     stored_image_format = format;
     update_image_status();
     return 1;
+}
+
+static void paste_clipboard_image(void) {
+    if (capture_clipboard_image()) {
+        append_log(L"[이미지] 클립보드 이미지를 저장했습니다.\r\n");
+    } else {
+        append_log(L"[실패] 클립보드에서 지원되는 이미지를 찾지 못했습니다.\r\n");
+    }
 }
 
 static BOOL publish_stored_image(void) {
@@ -1641,7 +1664,7 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
         );
         image_status = CreateWindowExW(
             0, L"ImagePreviewMVP", L"",
-            WS_CHILD | WS_VISIBLE | WS_BORDER,
+            WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP,
             0, 0, 100, 120,
             hwnd, (HANDLE)0, instance, (void *)0
         );
@@ -1797,11 +1820,7 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
                 return 0;
             }
             if ((HWND)lparam == image_paste_button) {
-                if (capture_clipboard_image()) {
-                    append_log(L"[이미지] 클립보드 이미지를 저장했습니다.\r\n");
-                } else {
-                    append_log(L"[실패] 클립보드에서 지원되는 이미지를 찾지 못했습니다.\r\n");
-                }
+                paste_clipboard_image();
                 return 0;
             }
             if ((HWND)lparam == image_clear_button) {

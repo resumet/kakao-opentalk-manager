@@ -1,6 +1,6 @@
 # 카카오톡 대화창 MVP — Codex 개발 인수인계 (기준선: v5)
 
-> **현재 구현 버전: v25 (기준선 v5), 배포 버전: v1.18.** v6의 오픈채팅 전용 필터는 실제 환경에서 대화방이 전혀 표시되지 않아 **폐기**했습니다. v25는 시간 설정을 메뉴의 옵션으로만 제공하고 저장 후 옵션 창을 닫는 버전입니다.
+> **현재 구현 버전: v26 (기준선 v5), 배포 버전: v1.19.** v6의 오픈채팅 전용 필터는 실제 환경에서 대화방이 전혀 표시되지 않아 **폐기**했습니다. v26은 클립보드 이미지 영역을 클릭한 뒤 `Ctrl+V`로 이미지를 붙여넣을 수 있는 버전입니다.
 >
 > 이 문서는 기존 구현을 유지하면서 **Windows + Visual Studio Code + Codex**에서 개발을 계속하기 위한 설명서입니다. 새 기능을 선제적으로 추가하라는 요청이 아닙니다.
 
@@ -20,7 +20,7 @@
 3. 왼쪽 **검색된 카톡창 목록**에서 한 개 이상의 방을 Ctrl/Shift로 선택하고 **[선택 →]**을 클릭하거나 항목을 더블클릭: 선택된 항목의 제목과 HWND를 오른쪽 **선택된 오픈톡방 목록**으로 이동.
 4. 오른쪽 목록에서도 한 개 이상의 방을 Ctrl/Shift로 선택하고 **[← 제외]**를 클릭하거나 항목을 더블클릭: 선택된 항목을 검색된 목록으로 되돌림.
 5. 오른쪽 **메시지 설정** 영역에서 이미지와 메시지를 준비하고 **[목록에 내용 입력]** 클릭: 선택된 오픈톡방 목록을 위에서 아래로 순회하며 같은 설정을 적용.
-   - **[이미지 붙여넣기]**는 현재 클립보드의 `CF_DIB`, `CF_DIBV5` 또는 PNG 이미지를 앱 메모리에 복사해 보관함. `CF_DIB`/`CF_DIBV5` 이미지는 원본 비율을 유지한 실제 미리보기로 표시함.
+   - 클립보드 이미지 영역을 클릭한 뒤 `Ctrl+V`를 누르거나 **[이미지 붙여넣기]**를 누르면 현재 클립보드의 `CF_DIB`, `CF_DIBV5` 또는 PNG 이미지를 앱 메모리에 복사해 보관함. `CF_DIB`/`CF_DIBV5` 이미지는 원본 비율을 유지한 실제 미리보기로 표시함.
    - **[이미지 지우기]**는 앱에 보관된 이미지를 제거하고 미리보기 영역을 **이미지 없음** 표시로 복원함.
    - 저장된 이미지가 없으면 메시지만 입력하며, **[메시지 전송완료하기]**를 체크하지 않은 경우 마지막 Enter를 추가하지 않음.
    - 저장된 이미지가 있으면 각 방에서 이미지를 클립보드에 복원한 뒤 `Ctrl+V` → 기본 1000ms 대기 → 전경 창이 대상 방이 직접 소유하고 같은 `KakaoTalk.exe` 프로세스에 속한 이미지 전송 팝업인지 확인 → 팝업 가로 중앙·하단 25px 지점의 **전송** 영역 클릭 → 사용자 커서 위치 복원 → 기본 1000ms 대기 → 전체 멘션의 `@` 또는 메시지 입력 순서로 처리함.
@@ -37,10 +37,10 @@
    - 목록 입력 시작, 방별 진행·성공·실패, 설정된 다음 방 대기 및 전체 완료
    - 이미지·메시지·전체 멘션 설정이 모두 없거나 선택된 방이 없을 때의 중단 사유
 7. UI는 EXE 리소스에 포함된 Pretendard Regular/SemiBold 글꼴, 밝은 중성 배경, 굵은 구획 제목, 둥근 평면 버튼과 주요 작업의 파란색 강조를 사용함. 실행 시 글꼴을 프로세스 전용으로 등록하므로 별도 설치가 필요 없음.
-8. 메인 창 제목에 **비즈업클래스-카카오단톡 메시지 자동화 (v1.18)**를 표시하고 메뉴에서 다음 기능을 제공함.
+8. 메인 창 제목에 **비즈업클래스-카카오단톡 메시지 자동화 (v1.19)**를 표시하고 메뉴에서 다음 기능을 제공함.
    - **설정 → 옵션**: 5개 대기값을 변경하고 저장하는 시간 설정 창을 엶.
    - **도움말 → 업데이트 확인**: GitHub의 최신 Release 주소를 WinHTTP로 확인해 현재 버전과 비교하고, 새 버전이 있으면 기본 브라우저로 다운로드 페이지를 열 수 있음.
-   - **도움말 → 프로그램 정보**: 프로그램명, v1.18 버전 및 Windows x64 단독 실행형 정보를 표시함.
+   - **도움말 → 프로그램 정보**: 프로그램명, v1.19 버전 및 Windows x64 단독 실행형 정보를 표시함.
 
 **중요:** 전체 멘션의 `Enter`, **[메시지 전송완료하기]**의 마지막 `Enter`, 이미지 확인창의 **전송** 버튼 클릭은 실제 동작이므로 메시지·이미지가 전송될 수 있음. **본인 소유 테스트 대화방에서만 먼저 검증**할 것.
 
@@ -72,7 +72,8 @@
 | v22 | [메시지 전송완료하기] 선택 시 메시지 입력 뒤 Enter로 전송 완료 | v23에 계승 |
 | v23 | 양쪽 대화방 목록의 Ctrl/Shift 다중 선택과 더블클릭 양방향 이동 | v24에 계승 |
 | v24 | 프로그램 메뉴, 프로그램 정보, 기존 시간 설정 옵션 연결, GitHub Release 업데이트 확인, 제목의 버전 표시 | v25에 계승 |
-| **v25** | **메인 시간 설정 버튼 제거, 옵션의 저장하기 성공 시 설정 저장 및 창 닫기** | **현재 구현 버전** |
+| v25 | 메인 시간 설정 버튼 제거, 옵션의 저장하기 성공 시 설정 저장 및 창 닫기 | v26에 계승 |
+| **v26** | **클립보드 이미지 영역 클릭 후 `Ctrl+V`로 이미지 저장 및 미리보기 갱신** | **현재 구현 버전** |
 
 **롤백 결정:** 오픈채팅 여부를 신뢰성 있게 판별하는 카카오톡 전용 API/속성을 확보하지 못한 채 필터를 적용한 것이 문제였습니다. 현재 프로젝트에는 v6 필터를 포함하지 않았습니다. 오픈채팅 판별을 재추진하려면 카카오톡 실제 설치 버전에서 일반 채팅과 오픈채팅의 창/UI 구조를 비교하는 **실측 근거**가 먼저 필요합니다.
 
@@ -343,6 +344,14 @@
 - 배포 EXE 자동 UI 점검에서 v1.18 제목, 메인 화면의 **[시간 설정]** 버튼 제거, **설정 → 옵션**의 입력칸 5개와 **[저장하기]** 버튼을 확인함. 유효하지 않은 값은 옵션 창을 유지했고, 유효한 값을 저장하면 창이 닫혔으며 같은 실행 중 다시 연 옵션 창에서 저장값이 유지됨을 확인함.
 - 실제 카카오톡 대화방을 대상으로 한 이미지·멘션·메시지 전송 동작은 **미검증**.
 
+### 2026-10-25 v26 / 배포 v1.19 변경 및 검증 기록
+
+- 클립보드 이미지 미리보기 영역을 클릭하면 해당 컨트롤이 키보드 포커스를 받도록 변경함.
+- 포커스가 있는 이미지 영역에서 `Ctrl+V`를 누르면 기존 **[이미지 붙여넣기]** 버튼과 같은 클립보드 이미지 저장·미리보기·로그 경로를 실행하도록 구현함.
+- 키를 누르고 있을 때 자동 반복으로 같은 이미지를 계속 저장하지 않도록 최초 `V` 키 입력만 처리함.
+- 기존 **[이미지 붙여넣기]** 버튼, 이미지 지우기, 카카오톡 전송 순서와 대기값은 변경하지 않음.
+- GitHub Windows runner 빌드와 Release 결과는 자동 배포 후 이 절에 추가 기록함.
+
 ### 2026-10-25 저장소 배포 정책 변경
 
 - 제품 소스와 배포 버전은 변경하지 않고 v23 / v1.16을 유지함.
@@ -364,8 +373,8 @@
 
 ### 배포 실행 파일 버전 규칙
 
-- 현재 배포 파일: `KakoMVP-v1.18.exe`
-- 구현 이력 버전(v25)과 사용자 배포 파일 버전(v1.18)은 별도로 관리함.
+- 현재 배포 파일: `KakoMVP-v1.19.exe`
+- 구현 이력 버전(v26)과 사용자 배포 파일 버전(v1.19)은 별도로 관리함.
 - 제품 수정이 발생하는 각 작업마다 배포 버전을 올리고 `KakoMVP-v<배포 버전>.exe` 형식의 실행 파일과 SHA-256을 README에 기록함.
 - `*.exe`는 `.gitignore`로 일반 Git 커밋에서 제외하고, 동일한 버전 태그의 GitHub Release 자산으로 배포함.
 
@@ -382,15 +391,15 @@
 3. 저장소 루트의 PowerShell에서 같은 버전으로 아래 명령을 한 번 실행함.
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\publish-release.ps1 v1.18
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\publish-release.ps1 v1.19
 ```
 
-명령의 실행 정책 우회는 이 저장소의 배포 스크립트를 실행하는 해당 PowerShell 프로세스에만 적용됩니다. 스크립트가 현재 `main`과 `origin/main`의 일치 여부를 확인하고 `v1.18` annotated tag를 만들어 푸시합니다. 태그 푸시 이후 GitHub Actions가 다음 작업을 자동 실행합니다.
+명령의 실행 정책 우회는 이 저장소의 배포 스크립트를 실행하는 해당 PowerShell 프로세스에만 적용됩니다. 스크립트가 현재 `main`과 `origin/main`의 일치 여부를 확인하고 `v1.19` annotated tag를 만들어 푸시합니다. 태그 푸시 이후 GitHub Actions가 다음 작업을 자동 실행합니다.
 
 1. 태그 시점의 소스를 체크아웃하고 README/AGENTS 버전 일치를 검사함.
-2. GitHub Windows runner의 Visual Studio C++ x64 도구와 Windows SDK로 `KakoMVP-v1.18.exe`를 빌드함.
+2. GitHub Windows runner의 Visual Studio C++ x64 도구와 Windows SDK로 `KakoMVP-v1.19.exe`를 빌드함.
 3. 결과가 x64 PE32+ Windows GUI 실행 파일인지 검사하고 SHA-256 파일을 생성함.
-4. `KakoMVP v1.18` GitHub Release를 만들고 EXE 및 `KakoMVP-v1.18.exe.sha256.txt`를 첨부함.
+4. `KakoMVP v1.19` GitHub Release를 만들고 EXE 및 `KakoMVP-v1.19.exe.sha256.txt`를 첨부함.
 
 태그가 이미 있거나 작업 트리에 미커밋 변경이 있거나 `main`이 원격과 다르면 스크립트는 새 태그를 만들지 않습니다. 자동 실행이 실패하면 GitHub **Actions → Build and publish Windows release → Run workflow**에서 기존 태그를 입력해 다시 실행할 수 있습니다.
 
@@ -409,14 +418,14 @@ KakaoMVP_v5_Codex/
 ├── scripts/
 │   └── publish-release.ps1 # 배포 버전 검사, annotated tag 생성 및 푸시
 ├── crt_shim.c   # MSVC /NODEFAULTLIB 빌드가 요구하는 최소 memset 구현
-├── main.c       # v5 기준선에 승인된 v25 기능을 반영한 C 소스
+├── main.c       # v5 기준선에 승인된 v26 기능을 반영한 C 소스
 ├── resources.rc # Pretendard 글꼴 리소스 정의
 ├── LICENSE-Pretendard.txt # Pretendard SIL OFL 1.1 라이선스
 ├── README.md    # 구현 이력, 빌드·검증·제약사항
 └── AGENTS.md    # Codex가 자동으로 읽을 수 있는 개발 규칙
 ```
 
-이 폴더는 소스 중심 작업 폴더입니다. 로컬에서 생성한 `KakoMVP-v1.18.exe`와 이후 EXE는 폴더에 남아 있어도 Git이 추적하지 않으며, 배포본은 GitHub Releases에서 관리합니다. TTF 파일은 빌드 입력이며 실행할 때는 EXE 내부 리소스에서 로드됩니다.
+이 폴더는 소스 중심 작업 폴더입니다. 로컬에서 생성한 `KakoMVP-v1.19.exe`와 이후 EXE는 폴더에 남아 있어도 Git이 추적하지 않으며, 배포본은 GitHub Releases에서 관리합니다. TTF 파일은 빌드 입력이며 실행할 때는 EXE 내부 리소스에서 로드됩니다.
 
 ## 5. 현재 소스 구조 (`main.c`)
 
@@ -442,7 +451,7 @@ KakaoMVP_v5_Codex/
 ### 메시지 설정과 이미지 클립보드
 
 - `capture_clipboard_image()`: 현재 클립보드에서 `CF_DIB`, `CF_DIBV5`, PNG 순으로 지원 이미지를 찾아 독립된 전역 메모리에 복제.
-- `image_preview_proc()`: 저장된 DIB 이미지의 헤더와 픽셀 위치를 검증하고, 원본 비율을 유지해 오른쪽 미리보기 영역에 그림.
+- `image_preview_proc()`: 클릭 시 키보드 포커스를 받고 `Ctrl+V`를 기존 클립보드 이미지 저장 경로로 전달하며, 저장된 DIB 이미지의 헤더와 픽셀 위치를 검증해 원본 비율로 미리보기 영역에 그림.
 - `publish_stored_image()`: 저장된 이미지 메모리를 다시 복제하여 시스템 클립보드에 게시. 각 방 처리 시 클립보드 내용은 저장 이미지로 교체됨.
 - `clear_stored_image()`: 저장 이미지를 해제하고 오른쪽 상태 표시를 **이미지 없음**으로 변경.
 - `send_paste()`: `SendInput()`으로 실제 `Ctrl+V` 키다운·키업을 전송하고 실패 시 Ctrl 키를 해제.
@@ -465,7 +474,7 @@ KakaoMVP_v5_Codex/
 - `append_log()`: 읽기 전용 로그 Edit 컨트롤의 끝에 상태 문구를 추가하고 최신 항목으로 스크롤.
 - `create_app_menu()`: 설정 메뉴의 **옵션**과 도움말 메뉴의 **업데이트 확인**·**프로그램 정보** 명령을 생성함.
 - `fetch_latest_version()`/`check_for_updates()`: 사용자 요청 시 WinHTTP의 HTTPS 요청과 자동 리디렉션 최종 URL에서 최신 Release 태그를 읽고 현재 버전과 비교하며, 새 버전이면 `ShellExecuteW()`로 최신 Release 페이지를 엶.
-- `show_program_information()`: 현재 프로그램명, v1.18 버전, 지원 실행 환경을 대화상자로 표시함.
+- `show_program_information()`: 현재 프로그램명, v1.19 버전, 지원 실행 환경을 대화상자로 표시함.
 - `window_proc()`: 두 ListBox, 목록 이동 버튼, 이미지·메시지 설정, 전체 멘션과 메시지 전송 완료 체크박스, 시간 설정, 프로그램 메뉴, 진행 로그 생성과 클릭 분기, UI 크기 재배치 등 Win32 메시지 처리.
 - `app_entry()`: 내장 글꼴 등록 후 별도 CRT 시작 코드 없이 자체 Win32 메시지 루프 실행.
 
@@ -488,7 +497,7 @@ KakaoMVP_v5_Codex/
 rc /nologo /fo resources.res resources.rc
 cl /nologo /c /O2 /GS- /Zl /utf-8 /TC main.c /Fo:main.obj
 cl /nologo /c /Od /Oi- /GS- /Zl /TC crt_shim.c /Fo:crt_shim.obj
-link /nologo main.obj crt_shim.obj resources.res /SUBSYSTEM:WINDOWS /ENTRY:app_entry /NODEFAULTLIB /OUT:KakoMVP-v1.18.exe kernel32.lib user32.lib gdi32.lib winhttp.lib shell32.lib
+link /nologo main.obj crt_shim.obj resources.res /SUBSYSTEM:WINDOWS /ENTRY:app_entry /NODEFAULTLIB /OUT:KakoMVP-v1.19.exe kernel32.lib user32.lib gdi32.lib winhttp.lib shell32.lib
 ```
 
 - `cl`: Microsoft C/C++ 컴파일러. `where cl`로 사용 가능 여부 확인.
@@ -499,7 +508,7 @@ link /nologo main.obj crt_shim.obj resources.res /SUBSYSTEM:WINDOWS /ENTRY:app_e
 - `crt_shim.c`: `/O2`로 컴파일된 `main.c`가 MSVC에서 요구하는 `memset` 심볼만 제공함. `/Od /Oi-`로 별도 컴파일하여 구현 자체가 다시 CRT 호출로 치환되지 않도록 함.
 - `winhttp.lib`/`shell32.lib`: 사용자가 메뉴에서 업데이트 확인을 선택했을 때 GitHub 최신 Release를 확인하고 브라우저를 여는 Windows 기본 시스템 API에 사용함. 별도 런타임이나 설치 파일을 추가하지 않음.
 - `/GS-`: CRT 없이 독자 진입점을 사용하는 **기존 최소 구현을 재현하기 위한 빌드 옵션**. 스택 보호가 꺼지므로 보안 강화가 필요한 정식 배포 시에는 표준 런타임 시작점 및 보안 설정 재검토 필요.
-- **검증 범위:** v1.18은 기존 `kernel32.dll`, `user32.dll`, `gdi32.dll`과 업데이트 확인에 사용하는 Windows 기본 `winhttp.dll`, `shell32.dll`만 링크합니다. GitHub Windows runner의 MSVC 빌드와 PE 형식 검사 결과는 GitHub Release 자동화 기록에 별도로 반영합니다.
+- **검증 범위:** v1.19는 기존 `kernel32.dll`, `user32.dll`, `gdi32.dll`과 업데이트 확인에 사용하는 Windows 기본 `winhttp.dll`, `shell32.dll`만 링크합니다. GitHub Windows runner의 MSVC 빌드와 PE 형식 검사 결과는 GitHub Release 자동화 기록에 별도로 반영합니다.
 
 ### `main.c` 작업상 주의
 
@@ -534,11 +543,12 @@ link /nologo main.obj crt_shim.obj resources.res /SUBSYSTEM:WINDOWS /ENTRY:app_e
 | T23 | 메시지를 입력하고 [메시지 전송완료하기]를 체크한 뒤 테스트 방에서 [목록에 내용 입력] 클릭 | 메시지 입력 직후 일반 `Enter`가 한 번 발생해 메시지 전송이 완료되며 진행 로그에 전송 완료가 표시됨 |
 | T24 | 검색된 목록에서 한 개 또는 여러 항목을 선택하고 선택 항목을 더블클릭 | 현재 선택된 모든 항목이 선택된 오픈톡방 목록으로 이동함 |
 | T25 | 선택된 목록에서 한 개 또는 여러 항목을 선택하고 선택 항목을 더블클릭 | 현재 선택된 모든 항목이 검색된 목록으로 되돌아감 |
-| T26 | 프로그램 실행 후 메인 창 제목 확인 | **비즈업클래스-카카오단톡 메시지 자동화 (v1.18)**가 표시됨 |
+| T26 | 프로그램 실행 후 메인 창 제목 확인 | **비즈업클래스-카카오단톡 메시지 자동화 (v1.19)**가 표시됨 |
 | T27 | **설정 → 옵션** 선택 | 기존 **시간 설정 (ms)** 창이 열리고 현재 5개 대기값을 수정할 수 있음 |
-| T28 | **도움말 → 프로그램 정보** 선택 | 프로그램명, v1.18, Windows 10/11 x64 단독 실행형 정보가 표시됨 |
+| T28 | **도움말 → 프로그램 정보** 선택 | 프로그램명, v1.19, Windows 10/11 x64 단독 실행형 정보가 표시됨 |
 | T29 | 인터넷 연결 상태에서 **도움말 → 업데이트 확인** 선택 | GitHub 최신 Release 태그를 현재 버전과 비교해 최신 여부를 알리며 새 버전이면 다운로드 페이지 열기 여부를 물음 |
 | T30 | **설정 → 옵션**에서 빈 값 또는 600001을 입력하고 **[저장하기]** 클릭 | 오류 문구를 표시하고 기존 시간 설정을 변경하지 않으며 옵션 창을 닫지 않음 |
+| T31 | 이미지가 있는 클립보드 상태에서 클립보드 이미지 영역을 클릭하고 `Ctrl+V` 입력 | 클립보드 이미지가 저장되어 미리보기가 갱신되고 성공 로그가 표시됨 |
 
 **실제 Windows + 카카오톡 테스트 대화방에서의 이미지 전송, 전체 멘션 선택, 여러 줄 메시지 입력 및 시간 설정 검증은 이 대화에서 수행되지 않았습니다.** Windows 실행 파일 생성, Pretendard 적용, 합성 `KakaoTalk.exe` 대화창의 설정 시간·이미지·멘션·여러 줄 키 순서는 확인했지만 실제 카카오톡에서의 성공을 뜻하지 않습니다.
 
@@ -562,7 +572,7 @@ link /nologo main.obj crt_shim.obj resources.res /SUBSYSTEM:WINDOWS /ENTRY:app_e
 - **로그 보존 범위:** 진행 로그는 현재 실행 중에만 화면에 누적되며 파일로 저장하지 않음.
 - **내장 글꼴 크기와 라이선스:** Pretendard Regular/SemiBold TTF를 EXE에 포함하므로 실행 파일 크기가 증가함. 글꼴은 SIL Open Font License 1.1에 따라 사용하며 `LICENSE-Pretendard.txt`를 함께 보관함.
 - **업데이트 확인 네트워크:** 메뉴를 선택한 경우에만 `github.com`의 최신 Release 주소에 HTTPS로 연결함. 네트워크·프록시·방화벽 문제나 GitHub 장애가 있으면 실패 대화상자와 로그를 표시하며 기존 메시지 기능에는 영향을 주지 않음.
-- **고정 밝은 테마:** v1.18의 현대화 색상은 Win32로 그리는 고정 밝은 테마이며 Windows 다크 모드에 자동 전환되지 않음.
+- **고정 밝은 테마:** v1.19의 현대화 색상은 Win32로 그리는 고정 밝은 테마이며 Windows 다크 모드에 자동 전환되지 않음.
 - **한 번만 목록 수집:** 새 방을 열면 EXE 재실행 필요.
 - **코드 서명 없음:** Windows 보안 경고는 발생할 수 있음.
 
@@ -575,7 +585,7 @@ link /nologo main.obj crt_shim.obj resources.res /SUBSYSTEM:WINDOWS /ENTRY:app_e
 5. **오픈채팅 전용 필터는 다시 적용하지 않습니다.** 명확히 요청받고 실제 Windows 카카오톡 UI 근거가 확보된 경우에만 재설계합니다.
 6. 선택된 오픈톡방 목록은 수동 분류이며, 메시지 발송 Enter는 **[메시지 전송완료하기]**가 체크된 경우에만 추가합니다.
 7. Windows x64 단독 EXE, 유니코드 한글 입력, 추가 런타임 불필요라는 조건을 유지합니다.
-8. 수정 후 Windows에서 빌드하고 T1–T30 중 영향받는 항목을 검증한 다음 `README.md`에 버전/변경사항/검증 결과를 기록합니다. 실제 테스트하지 않았다면 **미검증**이라고 명시합니다.
+8. 수정 후 Windows에서 빌드하고 T1–T31 중 영향받는 항목을 검증한 다음 `README.md`에 버전/변경사항/검증 결과를 기록합니다. 실제 테스트하지 않았다면 **미검증**이라고 명시합니다.
 
 ---
 
@@ -584,5 +594,5 @@ link /nologo main.obj crt_shim.obj resources.res /SUBSYSTEM:WINDOWS /ENTRY:app_e
 - 기준선 `main.c`: **v5 롤백 ZIP 내부 원본과 바이트 단위 동일한 파일**
 - 원본 SHA-256: `ffb628b6c0cebc398baaecd63efe8355b20a53bd24465cd1315bc067f40cf273`
 - 기존 v5 EXE SHA-256: `7a74da6d2cc680f26eab8f2a20fadbe564c821534be01f8c08b4dccb4d806ce8`
-- GitHub Release의 현재 배포 대상: `KakoMVP-v1.18.exe` (SHA-256: `fd6421735ac49e59de61ab549360aac68c0c839c43423fad3a90543490b49b54`)
+- GitHub Release의 현재 배포 대상: `KakoMVP-v1.19.exe` (자동 배포 후 SHA-256 기록)
 - 작업 시점: 2026-10-25
