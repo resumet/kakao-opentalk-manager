@@ -350,7 +350,11 @@
 - 포커스가 있는 이미지 영역에서 `Ctrl+V`를 누르면 기존 **[이미지 붙여넣기]** 버튼과 같은 클립보드 이미지 저장·미리보기·로그 경로를 실행하도록 구현함.
 - 키를 누르고 있을 때 자동 반복으로 같은 이미지를 계속 저장하지 않도록 최초 `V` 키 입력만 처리함.
 - 기존 **[이미지 붙여넣기]** 버튼, 이미지 지우기, 카카오톡 전송 순서와 대기값은 변경하지 않음.
-- GitHub Windows runner 빌드와 Release 결과는 자동 배포 후 이 절에 추가 기록함.
+- [GitHub Actions v1.19 자동 배포](https://github.com/resumet/kakao-opentalk-manager/actions/runs/40148426125)에서 MSVC Windows x64 standalone 빌드와 PE 형식 검사가 성공했으며 [KakoMVP v1.19 Release](https://github.com/resumet/kakao-opentalk-manager/releases/tag/v1.19)를 게시함.
+- Release 자산 `KakoMVP-v1.19.exe`는 5,430,784바이트이고 SHA-256은 `49e47fc23eb91989c669eeb57b6cd72b3b1b6b1a34c5b5823fdea8d1ba76411e`임.
+- 배포 EXE를 다시 내려받아 SHA-256 일치를 확인했고 PE 검사 결과 `IMAGE_FILE_MACHINE_AMD64`, PE32+, Windows GUI이며 import DLL은 `KERNEL32.dll`, `USER32.dll`, `GDI32.dll`, `WINHTTP.dll`, `SHELL32.dll`뿐임.
+- 배포 EXE 자동 UI 점검에서 실제 `CF_DIB` 이미지가 있는 Windows 클립보드를 준비한 뒤 미리보기 영역 클릭과 실제 `Ctrl+V` 키 입력을 수행했으며, 이미지 저장 성공 로그가 기록됨을 확인함.
+- 실제 카카오톡 대화방으로 저장 이미지를 전송하는 동작은 **미검증**.
 
 ### 2026-10-25 저장소 배포 정책 변경
 
@@ -594,5 +598,5 @@ link /nologo main.obj crt_shim.obj resources.res /SUBSYSTEM:WINDOWS /ENTRY:app_e
 - 기준선 `main.c`: **v5 롤백 ZIP 내부 원본과 바이트 단위 동일한 파일**
 - 원본 SHA-256: `ffb628b6c0cebc398baaecd63efe8355b20a53bd24465cd1315bc067f40cf273`
 - 기존 v5 EXE SHA-256: `7a74da6d2cc680f26eab8f2a20fadbe564c821534be01f8c08b4dccb4d806ce8`
-- GitHub Release의 현재 배포 대상: `KakoMVP-v1.19.exe` (자동 배포 후 SHA-256 기록)
+- GitHub Release의 현재 배포 대상: `KakoMVP-v1.19.exe` (SHA-256: `49e47fc23eb91989c669eeb57b6cd72b3b1b6b1a34c5b5823fdea8d1ba76411e`)
 - 작업 시점: 2026-10-25
