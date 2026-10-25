@@ -394,7 +394,13 @@
 - 양쪽 ListBox 시작 위치와 중앙 이동 버튼 위치를 함께 내려 컨트롤이 겹치지 않도록 조정함.
 - v28의 메시지 입력 포커스 수정, 820px 기본 창 높이, 좁아진 목록 폭과 확장된 메시지 카드 높이를 그대로 유지함.
 - 제목, 프로그램 정보 및 업데이트 비교용 버전을 v1.22로 갱신함.
-- GitHub Windows runner 빌드, 배포 EXE 자동 UI 점검 및 Release 결과는 자동 배포 후 이 절에 추가 기록함.
+- [GitHub Actions v1.22 자동 배포](https://github.com/resumet/kakao-opentalk-manager/actions/runs/40157180706)에서 MSVC Windows x64 standalone 빌드와 PE 형식 검사가 성공했으며 [KakoMVP v1.22 Release](https://github.com/resumet/kakao-opentalk-manager/releases/tag/v1.22)를 게시함.
+- Release 자산 `KakoMVP-v1.22.exe`는 5,434,880바이트이고 SHA-256은 `c200bfb8ee34bf7d242cdec671ba64a4ff61f6905518e63c87057c520f11562b`임.
+- 배포 EXE와 체크섬 파일을 다시 내려받아 SHA-256 일치를 확인했고 PE 검사 결과 `IMAGE_FILE_MACHINE_AMD64`, PE32+, Windows GUI이며 import DLL은 `KERNEL32.dll`, `USER32.dll`, `GDI32.dll`, `WINHTTP.dll`, `SHELL32.dll`뿐임.
+- 배포 EXE 자동 UI 점검에서 입력창 내부와 카드 여백을 실제 마우스로 각각 클릭했을 때 메시지 Edit가 포커스를 받고 실제 키 입력이 저장됨을 확인함.
+- 자동 UI 점검에서 기본 창 높이 820px, 목록 폭 282px, 메시지 설정 폭 380px, 카드 높이 235px, Edit 높이 211px를 확인함.
+- 검색 목록 제목 폭이 목록과 같은 282px이고 **[다시 불러오기]**가 제목 아래, 검색 목록이 버튼 아래에 배치돼 서로 겹치지 않음을 좌표와 화면 캡처로 확인함. 실제 열린 방 2개가 있는 화면에서 **검색된 카톡창 목록 (2개)** 전체 문구도 표시됨.
+- 실제 카카오톡 채팅 입력칸으로 메시지를 전달하거나 발송하는 순회 동작은 **미검증**.
 
 ### 2026-10-25 저장소 배포 정책 변경
 
@@ -648,5 +654,6 @@ link /nologo main.obj crt_shim.obj resources.res /SUBSYSTEM:WINDOWS /ENTRY:app_e
 - 기준선 `main.c`: **v5 롤백 ZIP 내부 원본과 바이트 단위 동일한 파일**
 - 원본 SHA-256: `ffb628b6c0cebc398baaecd63efe8355b20a53bd24465cd1315bc067f40cf273`
 - 기존 v5 EXE SHA-256: `7a74da6d2cc680f26eab8f2a20fadbe564c821534be01f8c08b4dccb4d806ce8`
-- GitHub Release의 현재 배포 대상: `KakoMVP-v1.22.exe` (자동 배포 후 SHA-256 기록)
+- GitHub Release의 현재 배포 대상: `KakoMVP-v1.22.exe`
+- 현재 배포 EXE SHA-256: `c200bfb8ee34bf7d242cdec671ba64a4ff61f6905518e63c87057c520f11562b`
 - 작업 시점: 2026-10-25
