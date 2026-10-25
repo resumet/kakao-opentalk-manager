@@ -38,6 +38,14 @@ typedef BOOL (*WNDENUMPROC)(HWND, LPARAM);
 
 typedef struct { LONG x; LONG y; } POINT;
 typedef struct {
+    POINT ptReserved;
+    POINT ptMaxSize;
+    POINT ptMaxPosition;
+    POINT ptMinTrackSize;
+    POINT ptMaxTrackSize;
+} MINMAXINFO;
+typedef char minmaxinfo_layout_must_be_40_bytes[(sizeof(MINMAXINFO) == 40) ? 1 : -1];
+typedef struct {
     HWND hwnd;
     UINT message;
     WPARAM wParam;
@@ -246,6 +254,7 @@ __declspec(dllimport) BOOL WinHttpCloseHandle(HINTERNET);
 #define WM_SIZE               0x0005u
 #define WM_PAINT              0x000Fu
 #define WM_ERASEBKGND         0x0014u
+#define WM_GETMINMAXINFO      0x0024u
 #define WM_DRAWITEM           0x002Bu
 #define WM_MEASUREITEM        0x002Cu
 #define WM_SETTEXT            0x000Cu
@@ -339,8 +348,10 @@ __declspec(dllimport) BOOL WinHttpCloseHandle(HINTERNET);
 #define IDR_PRETENDARD_REGULAR_FONT  101u
 #define IDR_PRETENDARD_SEMIBOLD_FONT 102u
 #define RGB_COLOR(r, g, b)    ((DWORD)((BYTE)(r) | ((DWORD)(BYTE)(g) << 8) | ((DWORD)(BYTE)(b) << 16)))
-#define APP_VERSION           L"v1.22"
-#define APP_TITLE             L"비즈업클래스-카카오단톡 메시지 자동화 (v1.22)"
+#define APP_VERSION           L"v1.23"
+#define APP_TITLE             L"비즈업클래스-카카오단톡 메시지 자동화 (v1.23)"
+#define APP_MIN_WIDTH         1120
+#define APP_MIN_HEIGHT        820
 #define RELEASE_LATEST_URL    L"https://github.com/resumet/kakao-opentalk-manager/releases/latest"
 
 static HWND listbox;
@@ -1960,6 +1971,14 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
         layout_controls(hwnd);
         return 0;
     }
+    if (message == WM_GETMINMAXINFO) {
+        MINMAXINFO *limits = (MINMAXINFO *)lparam;
+        if (limits) {
+            limits->ptMinTrackSize.x = APP_MIN_WIDTH;
+            limits->ptMinTrackSize.y = APP_MIN_HEIGHT;
+        }
+        return 0;
+    }
     if (message == WM_ERASEBKGND && app_background_brush) {
         RECT client;
         if (GetClientRect(hwnd, &client)) {
@@ -2197,7 +2216,7 @@ void app_entry(void) {
     hwnd = CreateWindowExW(
         0, wc.lpszClassName, APP_TITLE,
         WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-        (int)0x80000000u, (int)0x80000000u, 1120, 820,
+        (int)0x80000000u, (int)0x80000000u, APP_MIN_WIDTH, APP_MIN_HEIGHT,
         (HWND)0, (HANDLE)app_menu, instance, (void *)0
     );
     if (!hwnd) ExitProcess(1);
