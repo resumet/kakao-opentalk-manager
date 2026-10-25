@@ -219,6 +219,7 @@ __declspec(dllimport) BOOL WinHttpCloseHandle(HINTERNET);
 #define WS_OVERLAPPEDWINDOW   0x00CF0000u
 #define WS_VISIBLE            0x10000000u
 #define WS_CHILD              0x40000000u
+#define WS_CLIPCHILDREN       0x02000000u
 #define WS_VSCROLL            0x00200000u
 #define WS_TABSTOP            0x00010000u
 #define WS_BORDER             0x00800000u
@@ -338,8 +339,8 @@ __declspec(dllimport) BOOL WinHttpCloseHandle(HINTERNET);
 #define IDR_PRETENDARD_REGULAR_FONT  101u
 #define IDR_PRETENDARD_SEMIBOLD_FONT 102u
 #define RGB_COLOR(r, g, b)    ((DWORD)((BYTE)(r) | ((DWORD)(BYTE)(g) << 8) | ((DWORD)(BYTE)(b) << 16)))
-#define APP_VERSION           L"v1.20"
-#define APP_TITLE             L"비즈업클래스-카카오단톡 메시지 자동화 (v1.20)"
+#define APP_VERSION           L"v1.21"
+#define APP_TITLE             L"비즈업클래스-카카오단톡 메시지 자동화 (v1.21)"
 #define RELEASE_LATEST_URL    L"https://github.com/resumet/kakao-opentalk-manager/releases/latest"
 
 static HWND listbox;
@@ -581,6 +582,10 @@ static BOOL stored_dib_details(
 }
 
 static LRESULT message_card_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
+    if (message == WM_LBUTTONDOWN) {
+        if (message_edit) SetFocus(message_edit);
+        return 0;
+    }
     if (message == WM_PAINT) {
         PAINTSTRUCT paint;
         RECT client;
@@ -604,6 +609,11 @@ static LRESULT message_card_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM 
         if (border_pen) DeleteObject(border_pen);
         EndPaint(hwnd, &paint);
         return 0;
+    }
+    if (message == WM_CTLCOLOREDIT) {
+        SetBkColor((HDC)wparam, RGB_COLOR(255, 255, 255));
+        SetTextColor((HDC)wparam, RGB_COLOR(31, 41, 55));
+        return (LRESULT)surface_brush;
     }
     if (message == WM_ERASEBKGND) return 1;
     return DefWindowProcW(hwnd, message, wparam, lparam);
@@ -1028,6 +1038,7 @@ static void layout_controls(HWND hwnd) {
     int width, height, list_width, list_height, center_x, right_x;
     int action_y, log_label_y, log_top, log_height;
     int settings_x, settings_width, lists_area_width, half_button_width;
+    int message_card_height;
     if (!GetClientRect(hwnd, &rect)) return;
     width = rect.right - rect.left;
     height = rect.bottom - rect.top;
@@ -1035,7 +1046,7 @@ static void layout_controls(HWND hwnd) {
     log_height = maximum(0, height - log_top - 10);
     log_label_y = maximum(0, log_top - 24);
     action_y = maximum(0, log_label_y - 38);
-    settings_x = maximum(510, width - 310);
+    settings_x = maximum(470, width - 390);
     settings_width = maximum(0, width - settings_x - 10);
     lists_area_width = maximum(0, settings_x - 20);
     list_width = maximum(0, (lists_area_width - 130) / 2);
@@ -1043,6 +1054,7 @@ static void layout_controls(HWND hwnd) {
     center_x = 20 + list_width;
     right_x = center_x + 110;
     half_button_width = maximum(0, (settings_width - 30) / 2);
+    message_card_height = maximum(96, action_y - 334);
     if (source_label) {
         MoveWindow(source_label, 10, 10, maximum(0, list_width - 104), 24, 1);
     }
@@ -1087,25 +1099,36 @@ static void layout_controls(HWND hwnd) {
         MoveWindow(input_label, settings_x + 15, 238, maximum(0, settings_width - 30), 22, 1);
     }
     if (message_card) {
-        MoveWindow(message_card, settings_x + 15, 264, maximum(0, settings_width - 30), 106, 1);
+        MoveWindow(
+            message_card, settings_x + 15, 264,
+            maximum(0, settings_width - 30), message_card_height, 1
+        );
     }
     if (message_edit) {
-        MoveWindow(message_edit, settings_x + 27, 276, maximum(0, settings_width - 54), 82, 1);
+        MoveWindow(
+            message_edit, 12, 12,
+            maximum(0, settings_width - 54), maximum(0, message_card_height - 24), 1
+        );
     }
     if (mention_all_checkbox) {
         MoveWindow(
             mention_all_checkbox,
-            settings_x + 15, 378, maximum(0, settings_width - 30), 26, 1
+            settings_x + 15, maximum(0, action_y - 62),
+            maximum(0, settings_width - 30), 26, 1
         );
     }
     if (send_message_checkbox) {
         MoveWindow(
             send_message_checkbox,
-            settings_x + 15, 406, maximum(0, settings_width - 30), 26, 1
+            settings_x + 15, maximum(0, action_y - 34),
+            maximum(0, settings_width - 30), 26, 1
         );
     }
     if (message_button) {
-        MoveWindow(message_button, settings_x + 15, 440, maximum(0, settings_width - 30), 36, 1);
+        MoveWindow(
+            message_button, settings_x + 15, action_y,
+            maximum(0, settings_width - 30), 36, 1
+        );
     }
     if (log_label) {
         MoveWindow(log_label, 10, log_label_y, maximum(0, width - 20), 20, 1);
@@ -1856,7 +1879,7 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
         );
         message_card = CreateWindowExW(
             0, L"MessageCardMVP", L"",
-            WS_CHILD | WS_VISIBLE,
+            WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN,
             0, 0, 100, 106,
             hwnd, (HANDLE)0, instance, (void *)0
         );
@@ -1865,7 +1888,7 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL |
                 ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN,
             0, 0, 100, 90,
-            hwnd, (HANDLE)0, instance, (void *)0
+            message_card, (HANDLE)0, instance, (void *)0
         );
         mention_all_checkbox = CreateWindowExW(
             0, L"BUTTON", L"모두를 멘션하기",
@@ -2174,7 +2197,7 @@ void app_entry(void) {
     hwnd = CreateWindowExW(
         0, wc.lpszClassName, APP_TITLE,
         WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-        (int)0x80000000u, (int)0x80000000u, 1120, 700,
+        (int)0x80000000u, (int)0x80000000u, 1120, 820,
         (HWND)0, (HANDLE)app_menu, instance, (void *)0
     );
     if (!hwnd) ExitProcess(1);
