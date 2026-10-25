@@ -339,8 +339,8 @@ __declspec(dllimport) BOOL WinHttpCloseHandle(HINTERNET);
 #define IDR_PRETENDARD_REGULAR_FONT  101u
 #define IDR_PRETENDARD_SEMIBOLD_FONT 102u
 #define RGB_COLOR(r, g, b)    ((DWORD)((BYTE)(r) | ((DWORD)(BYTE)(g) << 8) | ((DWORD)(BYTE)(b) << 16)))
-#define APP_VERSION           L"v1.21"
-#define APP_TITLE             L"비즈업클래스-카카오단톡 메시지 자동화 (v1.21)"
+#define APP_VERSION           L"v1.22"
+#define APP_TITLE             L"비즈업클래스-카카오단톡 메시지 자동화 (v1.22)"
 #define RELEASE_LATEST_URL    L"https://github.com/resumet/kakao-opentalk-manager/releases/latest"
 
 static HWND listbox;
@@ -1050,31 +1050,31 @@ static void layout_controls(HWND hwnd) {
     settings_width = maximum(0, width - settings_x - 10);
     lists_area_width = maximum(0, settings_x - 20);
     list_width = maximum(0, (lists_area_width - 130) / 2);
-    list_height = maximum(0, log_label_y - 52);
+    list_height = maximum(0, log_label_y - 86);
     center_x = 20 + list_width;
     right_x = center_x + 110;
     half_button_width = maximum(0, (settings_width - 30) / 2);
     message_card_height = maximum(96, action_y - 334);
     if (source_label) {
-        MoveWindow(source_label, 10, 10, maximum(0, list_width - 104), 24, 1);
+        MoveWindow(source_label, 10, 8, list_width, 24, 1);
     }
     if (reload_button) {
-        MoveWindow(reload_button, 10 + maximum(0, list_width - 96), 6, 96, 28, 1);
+        MoveWindow(reload_button, 10, 36, 96, 28, 1);
     }
     if (selected_label) {
         MoveWindow(selected_label, right_x, 10, list_width, 20, 1);
     }
     if (listbox) {
-        MoveWindow(listbox, 10, 42, list_width, list_height, 1);
+        MoveWindow(listbox, 10, 76, list_width, list_height, 1);
     }
     if (selected_listbox) {
-        MoveWindow(selected_listbox, right_x, 42, list_width, list_height, 1);
+        MoveWindow(selected_listbox, right_x, 76, list_width, list_height, 1);
     }
     if (add_button) {
-        MoveWindow(add_button, center_x, 72, 90, 30, 1);
+        MoveWindow(add_button, center_x, 88, 90, 30, 1);
     }
     if (remove_button) {
-        MoveWindow(remove_button, center_x, 112, 90, 30, 1);
+        MoveWindow(remove_button, center_x, 128, 90, 30, 1);
     }
     if (settings_group) {
         MoveWindow(settings_group, settings_x, 10, settings_width, maximum(0, action_y + 30), 1);
