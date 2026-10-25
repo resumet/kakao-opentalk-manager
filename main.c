@@ -92,6 +92,15 @@ typedef struct {
     unsigned long long itemData;
 } DRAWITEMSTRUCT;
 typedef char drawitem_layout_must_be_64_bytes[(sizeof(DRAWITEMSTRUCT) == 64) ? 1 : -1];
+typedef struct {
+    UINT CtlType;
+    UINT CtlID;
+    UINT itemID;
+    UINT itemWidth;
+    UINT itemHeight;
+    unsigned long long itemData;
+} MEASUREITEMSTRUCT;
+typedef char measureitem_layout_must_be_32_bytes[(sizeof(MEASUREITEMSTRUCT) == 32) ? 1 : -1];
 /* Matching Windows 64-bit INPUT layout: sizeof(INPUT) == 40. */
 typedef struct {
     WORD wVk;
@@ -189,6 +198,7 @@ __declspec(dllimport) int SetBkMode(HDC, int);
 __declspec(dllimport) DWORD SetBkColor(HDC, DWORD);
 __declspec(dllimport) DWORD SetTextColor(HDC, DWORD);
 __declspec(dllimport) BOOL RoundRect(HDC, int, int, int, int, int, int);
+__declspec(dllimport) HANDLE CreatePen(int, int, DWORD);
 __declspec(dllimport) HANDLE AddFontMemResourceEx(void *, DWORD, void *, DWORD *);
 __declspec(dllimport) BOOL RemoveFontMemResourceEx(HANDLE);
 __declspec(dllimport) int StretchDIBits(HDC, int, int, int, int, int, int, int, int, const void *, const void *, UINT, DWORD);
@@ -226,6 +236,8 @@ __declspec(dllimport) BOOL WinHttpCloseHandle(HINTERNET);
 #define ES_WANTRETURN         0x1000u
 #define ES_NUMBER             0x2000u
 #define LBS_NOTIFY            0x0001u
+#define LBS_OWNERDRAWFIXED    0x0010u
+#define LBS_HASSTRINGS        0x0040u
 #define LBS_NOINTEGRALHEIGHT  0x0100u
 #define LBS_EXTENDEDSEL       0x0800u
 #define WM_CREATE             0x0001u
@@ -234,6 +246,7 @@ __declspec(dllimport) BOOL WinHttpCloseHandle(HINTERNET);
 #define WM_PAINT              0x000Fu
 #define WM_ERASEBKGND         0x0014u
 #define WM_DRAWITEM           0x002Bu
+#define WM_MEASUREITEM        0x002Cu
 #define WM_SETTEXT            0x000Cu
 #define WM_KEYDOWN            0x0100u
 #define WM_COMMAND            0x0111u
@@ -248,9 +261,11 @@ __declspec(dllimport) BOOL WinHttpCloseHandle(HINTERNET);
 #define EM_REPLACESEL         0x00C2u
 #define EM_SETREADONLY        0x00CFu
 #define EM_SCROLLCARET        0x00B7u
+#define EM_SETCUEBANNER       0x1501u
 #define BM_GETCHECK           0x00F0u
 #define LB_ADDSTRING          0x0180u
 #define LB_DELETESTRING       0x0182u
+#define LB_RESETCONTENT       0x0184u
 #define LB_SETSEL             0x0185u
 #define LB_GETTEXT            0x0189u
 #define LB_GETCOUNT           0x018Bu
@@ -293,9 +308,12 @@ __declspec(dllimport) BOOL WinHttpCloseHandle(HINTERNET);
 #define DT_CENTER             0x00000001u
 #define DT_VCENTER            0x00000004u
 #define DT_SINGLELINE         0x00000020u
+#define DT_END_ELLIPSIS       0x00008000u
 #define ODS_SELECTED          0x0001u
 #define ODS_DISABLED          0x0004u
 #define ODS_FOCUS             0x0010u
+#define ODT_LISTBOX           2u
+#define PS_SOLID              0
 #define TRANSPARENT           1
 #define FW_NORMAL             400
 #define FW_SEMIBOLD           600
@@ -320,8 +338,8 @@ __declspec(dllimport) BOOL WinHttpCloseHandle(HINTERNET);
 #define IDR_PRETENDARD_REGULAR_FONT  101u
 #define IDR_PRETENDARD_SEMIBOLD_FONT 102u
 #define RGB_COLOR(r, g, b)    ((DWORD)((BYTE)(r) | ((DWORD)(BYTE)(g) << 8) | ((DWORD)(BYTE)(b) << 16)))
-#define APP_VERSION           L"v1.19"
-#define APP_TITLE             L"비즈업클래스-카카오단톡 메시지 자동화 (v1.19)"
+#define APP_VERSION           L"v1.20"
+#define APP_TITLE             L"비즈업클래스-카카오단톡 메시지 자동화 (v1.20)"
 #define RELEASE_LATEST_URL    L"https://github.com/resumet/kakao-opentalk-manager/releases/latest"
 
 static HWND listbox;
@@ -331,7 +349,9 @@ static HWND selected_label;
 static HWND input_label;
 static HWND add_button;
 static HWND remove_button;
+static HWND reload_button;
 static HWND message_edit;
+static HWND message_card;
 static HWND mention_all_checkbox;
 static HWND send_message_checkbox;
 static HWND message_button;
@@ -391,6 +411,42 @@ static BOOL append_wide(wchar_t *buffer, int capacity, const wchar_t *text) {
     }
     buffer[used + index] = 0;
     return 1;
+}
+
+static void format_unsigned(UINT value, wchar_t *buffer) {
+    wchar_t reverse[16];
+    int count = 0;
+    int index;
+    do {
+        reverse[count++] = (wchar_t)(L'0' + value % 10u);
+        value /= 10u;
+    } while (value && count < 15);
+    for (index = 0; index < count; ++index) buffer[index] = reverse[count - index - 1];
+    buffer[count] = 0;
+}
+
+static void update_room_count_labels(void) {
+    wchar_t text[128];
+    wchar_t number[16];
+    LRESULT count;
+    if (source_label && listbox) {
+        count = SendMessageW(listbox, LB_GETCOUNT, 0, 0);
+        format_unsigned(count == LB_ERR ? 0u : (UINT)count, number);
+        text[0] = 0;
+        append_wide(text, 128, L"검색된 카톡창 목록 (");
+        append_wide(text, 128, number);
+        append_wide(text, 128, L"개)");
+        SendMessageW(source_label, WM_SETTEXT, 0, (LPARAM)text);
+    }
+    if (selected_label && selected_listbox) {
+        count = SendMessageW(selected_listbox, LB_GETCOUNT, 0, 0);
+        format_unsigned(count == LB_ERR ? 0u : (UINT)count, number);
+        text[0] = 0;
+        append_wide(text, 128, L"선택된 오픈톡방 목록 (");
+        append_wide(text, 128, number);
+        append_wide(text, 128, L"개)");
+        SendMessageW(selected_label, WM_SETTEXT, 0, (LPARAM)text);
+    }
 }
 
 static const wchar_t *find_wide(const wchar_t *text, const wchar_t *needle) {
@@ -522,6 +578,35 @@ static BOOL stored_dib_details(
     *width_result = header->biWidth;
     *height_result = (int)image_height;
     return 1;
+}
+
+static LRESULT message_card_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
+    if (message == WM_PAINT) {
+        PAINTSTRUCT paint;
+        RECT client;
+        HDC dc = BeginPaint(hwnd, &paint);
+        HANDLE previous_brush;
+        HANDLE previous_pen;
+        HANDLE border_pen;
+        if (!dc) return 0;
+        GetClientRect(hwnd, &client);
+        FillRect(dc, &client, app_background_brush);
+        client.left += 1;
+        client.top += 1;
+        client.right -= 1;
+        client.bottom -= 1;
+        border_pen = CreatePen(PS_SOLID, 1, RGB_COLOR(221, 226, 234));
+        previous_brush = SelectObject(dc, surface_brush);
+        previous_pen = SelectObject(dc, border_pen);
+        RoundRect(dc, client.left, client.top, client.right, client.bottom, 16, 16);
+        SelectObject(dc, previous_pen);
+        SelectObject(dc, previous_brush);
+        if (border_pen) DeleteObject(border_pen);
+        EndPaint(hwnd, &paint);
+        return 0;
+    }
+    if (message == WM_ERASEBKGND) return 1;
+    return DefWindowProcW(hwnd, message, wparam, lparam);
 }
 
 static LRESULT image_preview_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
@@ -954,27 +1039,30 @@ static void layout_controls(HWND hwnd) {
     settings_width = maximum(0, width - settings_x - 10);
     lists_area_width = maximum(0, settings_x - 20);
     list_width = maximum(0, (lists_area_width - 130) / 2);
-    list_height = maximum(0, log_label_y - 44);
+    list_height = maximum(0, log_label_y - 52);
     center_x = 20 + list_width;
     right_x = center_x + 110;
     half_button_width = maximum(0, (settings_width - 30) / 2);
     if (source_label) {
-        MoveWindow(source_label, 10, 10, list_width, 20, 1);
+        MoveWindow(source_label, 10, 10, maximum(0, list_width - 104), 24, 1);
+    }
+    if (reload_button) {
+        MoveWindow(reload_button, 10 + maximum(0, list_width - 96), 6, 96, 28, 1);
     }
     if (selected_label) {
         MoveWindow(selected_label, right_x, 10, list_width, 20, 1);
     }
     if (listbox) {
-        MoveWindow(listbox, 10, 34, list_width, list_height, 1);
+        MoveWindow(listbox, 10, 42, list_width, list_height, 1);
     }
     if (selected_listbox) {
-        MoveWindow(selected_listbox, right_x, 34, list_width, list_height, 1);
+        MoveWindow(selected_listbox, right_x, 42, list_width, list_height, 1);
     }
     if (add_button) {
-        MoveWindow(add_button, center_x, 64, 90, 30, 1);
+        MoveWindow(add_button, center_x, 72, 90, 30, 1);
     }
     if (remove_button) {
-        MoveWindow(remove_button, center_x, 104, 90, 30, 1);
+        MoveWindow(remove_button, center_x, 112, 90, 30, 1);
     }
     if (settings_group) {
         MoveWindow(settings_group, settings_x, 10, settings_width, maximum(0, action_y + 30), 1);
@@ -996,25 +1084,28 @@ static void layout_controls(HWND hwnd) {
         );
     }
     if (input_label) {
-        MoveWindow(input_label, settings_x + 15, 238, maximum(0, settings_width - 30), 20, 1);
+        MoveWindow(input_label, settings_x + 15, 238, maximum(0, settings_width - 30), 22, 1);
+    }
+    if (message_card) {
+        MoveWindow(message_card, settings_x + 15, 264, maximum(0, settings_width - 30), 106, 1);
     }
     if (message_edit) {
-        MoveWindow(message_edit, settings_x + 15, 262, maximum(0, settings_width - 30), 90, 1);
+        MoveWindow(message_edit, settings_x + 27, 276, maximum(0, settings_width - 54), 82, 1);
     }
     if (mention_all_checkbox) {
         MoveWindow(
             mention_all_checkbox,
-            settings_x + 15, 360, maximum(0, settings_width - 30), 26, 1
+            settings_x + 15, 378, maximum(0, settings_width - 30), 26, 1
         );
     }
     if (send_message_checkbox) {
         MoveWindow(
             send_message_checkbox,
-            settings_x + 15, 388, maximum(0, settings_width - 30), 26, 1
+            settings_x + 15, 406, maximum(0, settings_width - 30), 26, 1
         );
     }
     if (message_button) {
-        MoveWindow(message_button, settings_x + 15, 422, maximum(0, settings_width - 30), 36, 1);
+        MoveWindow(message_button, settings_x + 15, 440, maximum(0, settings_width - 30), 36, 1);
     }
     if (log_label) {
         MoveWindow(log_label, 10, log_label_y, maximum(0, width - 20), 20, 1);
@@ -1024,10 +1115,25 @@ static void layout_controls(HWND hwnd) {
     }
 }
 
+static BOOL list_contains_window(HWND room_list, HWND target) {
+    LRESULT count;
+    LRESULT index;
+    if (!room_list || !target) return 0;
+    count = SendMessageW(room_list, LB_GETCOUNT, 0, 0);
+    if (count == LB_ERR) return 0;
+    for (index = 0; index < count; ++index) {
+        if ((HWND)SendMessageW(room_list, LB_GETITEMDATA, (WPARAM)index, 0) == target) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static BOOL collect_window(HWND hwnd, LPARAM list_handle) {
     wchar_t title[512];
     LRESULT index;
     if (hwnd == main_window || !looks_like_chat_window(hwnd)) return 1;
+    if ((HWND)list_handle == listbox && list_contains_window(selected_listbox, hwnd)) return 1;
     if (!GetWindowTextW(hwnd, title, 512)) return 1;
 
     index = SendMessageW((HWND)list_handle, LB_ADDSTRING, 0, (LPARAM)title);
@@ -1036,6 +1142,14 @@ static BOOL collect_window(HWND hwnd, LPARAM list_handle) {
         SendMessageW((HWND)list_handle, LB_SETITEMDATA, (WPARAM)index, (LPARAM)hwnd);
     }
     return 1;
+}
+
+static void reload_chat_windows(void) {
+    if (!listbox) return;
+    SendMessageW(listbox, LB_RESETCONTENT, 0, 0);
+    EnumWindows(collect_window, (LPARAM)listbox);
+    update_room_count_labels();
+    append_log(L"[준비] 열려 있는 카카오톡 대화창 목록을 다시 불러왔습니다.\r\n");
 }
 
 /* Select the lowest visible, enabled RichEdit in the chosen chat window.
@@ -1198,6 +1312,7 @@ static void move_selected_rooms(HWND from, HWND to) {
         SendMessageW(from, LB_DELETESTRING, (WPARAM)indices[index - 1], 0);
     }
     GlobalFree((HGLOBAL)indices);
+    update_room_count_labels();
 }
 
 /* Win32 SendInput KEYEVENTF_UNICODE generates WM_CHAR in the target editor,
@@ -1437,6 +1552,59 @@ static void draw_modern_button(const DRAWITEMSTRUCT *item) {
     }
 }
 
+static void draw_room_list_item(const DRAWITEMSTRUCT *item) {
+    wchar_t text[512];
+    RECT bounds;
+    RECT text_bounds;
+    RECT divider;
+    RECT focus_bounds;
+    HBRUSH background_brush;
+    HBRUSH divider_brush;
+    HANDLE previous_font;
+    DWORD background;
+    DWORD foreground;
+    if (!item || !item->hDC || !item->hwndItem || item->itemID == (UINT)-1) return;
+    if (item->itemState & ODS_SELECTED) {
+        background = RGB_COLOR(239, 246, 255);
+        foreground = RGB_COLOR(29, 78, 216);
+    } else {
+        background = RGB_COLOR(255, 255, 255);
+        foreground = RGB_COLOR(31, 41, 55);
+    }
+    bounds = item->rcItem;
+    background_brush = CreateSolidBrush(background);
+    divider_brush = CreateSolidBrush(RGB_COLOR(226, 232, 240));
+    FillRect(item->hDC, &bounds, background_brush);
+    divider = bounds;
+    divider.top = maximum(divider.top, divider.bottom - 1);
+    FillRect(item->hDC, &divider, divider_brush);
+    DeleteObject(divider_brush);
+    DeleteObject(background_brush);
+
+    text[0] = 0;
+    SendMessageW(item->hwndItem, LB_GETTEXT, (WPARAM)item->itemID, (LPARAM)text);
+    text_bounds = bounds;
+    text_bounds.left += 10;
+    text_bounds.right -= 8;
+    text_bounds.bottom -= 1;
+    previous_font = SelectObject(item->hDC, app_font);
+    SetBkMode(item->hDC, TRANSPARENT);
+    SetTextColor(item->hDC, foreground);
+    DrawTextW(
+        item->hDC, text, -1, &text_bounds,
+        DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS
+    );
+    SelectObject(item->hDC, previous_font);
+    if (item->itemState & ODS_FOCUS) {
+        focus_bounds = bounds;
+        focus_bounds.left += 3;
+        focus_bounds.top += 2;
+        focus_bounds.right -= 3;
+        focus_bounds.bottom -= 3;
+        DrawFocusRect(item->hDC, &focus_bounds);
+    }
+}
+
 static DWORD *timing_value_at(int index) {
     if (index == 0) return &timings.image_paste_to_send;
     if (index == 1) return &timings.image_send_to_input;
@@ -1447,15 +1615,7 @@ static DWORD *timing_value_at(int index) {
 }
 
 static void format_delay(DWORD value, wchar_t *buffer) {
-    wchar_t reverse[16];
-    int count = 0;
-    int index;
-    do {
-        reverse[count++] = (wchar_t)(L'0' + value % 10u);
-        value /= 10u;
-    } while (value && count < 15);
-    for (index = 0; index < count; ++index) buffer[index] = reverse[count - index - 1];
-    buffer[count] = 0;
+    format_unsigned((UINT)value, buffer);
 }
 
 static BOOL read_delay(HWND edit, DWORD *result) {
@@ -1624,17 +1784,25 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
             0, 0, 100, 20,
             hwnd, (HANDLE)0, instance, (void *)0
         );
+        reload_button = CreateWindowExW(
+            0, L"BUTTON", L"다시 불러오기",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
+            0, 0, 96, 28,
+            hwnd, (HANDLE)0, instance, (void *)0
+        );
         listbox = CreateWindowExW(
             0, L"LISTBOX", L"",
             WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_TABSTOP | WS_BORDER |
-                LBS_NOTIFY | LBS_NOINTEGRALHEIGHT | LBS_EXTENDEDSEL,
+                LBS_NOTIFY | LBS_OWNERDRAWFIXED | LBS_HASSTRINGS |
+                LBS_NOINTEGRALHEIGHT | LBS_EXTENDEDSEL,
             0, 0, 100, 100,
             hwnd, (HANDLE)0, instance, (void *)0
         );
         selected_listbox = CreateWindowExW(
             0, L"LISTBOX", L"",
             WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_TABSTOP | WS_BORDER |
-                LBS_NOTIFY | LBS_NOINTEGRALHEIGHT | LBS_EXTENDEDSEL,
+                LBS_NOTIFY | LBS_OWNERDRAWFIXED | LBS_HASSTRINGS |
+                LBS_NOINTEGRALHEIGHT | LBS_EXTENDEDSEL,
             0, 0, 100, 100,
             hwnd, (HANDLE)0, instance, (void *)0
         );
@@ -1681,14 +1849,20 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
             hwnd, (HANDLE)0, instance, (void *)0
         );
         input_label = CreateWindowExW(
-            0, L"STATIC", L"메시지",
+            0, L"STATIC", L"◎  메시지 작성 미리보기",
             WS_CHILD | WS_VISIBLE,
             0, 0, 70, 24,
             hwnd, (HANDLE)0, instance, (void *)0
         );
+        message_card = CreateWindowExW(
+            0, L"MessageCardMVP", L"",
+            WS_CHILD | WS_VISIBLE,
+            0, 0, 100, 106,
+            hwnd, (HANDLE)0, instance, (void *)0
+        );
         message_edit = CreateWindowExW(
             0, L"EDIT", L"",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | WS_BORDER |
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL |
                 ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN,
             0, 0, 100, 90,
             hwnd, (HANDLE)0, instance, (void *)0
@@ -1727,10 +1901,18 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
         if (listbox) {
             EnumWindows(collect_window, (LPARAM)listbox);
         }
+        update_room_count_labels();
         png_clipboard_format = RegisterClipboardFormatW(L"PNG");
-        if (message_edit) SendMessageW(message_edit, EM_SETLIMITTEXT, 4095, 0);
+        if (message_edit) {
+            SendMessageW(message_edit, EM_SETLIMITTEXT, 4095, 0);
+            SendMessageW(
+                message_edit, EM_SETCUEBANNER, 0,
+                (LPARAM)L"전송할 메시지를 입력하세요."
+            );
+        }
         set_control_font(source_label, section_font);
         set_control_font(selected_label, section_font);
+        set_control_font(reload_button, app_font);
         set_control_font(listbox, app_font);
         set_control_font(selected_listbox, app_font);
         set_control_font(add_button, app_font);
@@ -1762,8 +1944,19 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
             return 1;
         }
     }
+    if (message == WM_MEASUREITEM) {
+        MEASUREITEMSTRUCT *measure = (MEASUREITEMSTRUCT *)lparam;
+        if (measure && measure->CtlType == ODT_LISTBOX) {
+            measure->itemHeight = 34;
+            return 1;
+        }
+    }
     if (message == WM_DRAWITEM) {
         DRAWITEMSTRUCT *item = (DRAWITEMSTRUCT *)lparam;
+        if (item && (item->hwndItem == listbox || item->hwndItem == selected_listbox)) {
+            draw_room_list_item(item);
+            return 1;
+        }
         if (item && item->hwndItem != settings_group) {
             draw_modern_button(item);
             return 1;
@@ -1819,6 +2012,10 @@ static LRESULT window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam
                 move_selected_rooms(selected_listbox, listbox);
                 return 0;
             }
+            if ((HWND)lparam == reload_button) {
+                reload_chat_windows();
+                return 0;
+            }
             if ((HWND)lparam == image_paste_button) {
                 paste_clipboard_image();
                 return 0;
@@ -1857,6 +2054,7 @@ void app_entry(void) {
     HINSTANCE instance = GetModuleHandleW((LPCWSTR)0);
     WNDCLASSW wc;
     WNDCLASSW preview_class;
+    WNDCLASSW message_card_class;
     WNDCLASSW timing_class;
     HMENU app_menu;
     HWND hwnd;
@@ -1917,6 +2115,21 @@ void app_entry(void) {
     );
     if (!app_font) app_font = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
     if (!section_font) section_font = app_font;
+
+    message_card_class.style = 0;
+    message_card_class.lpfnWndProc = message_card_proc;
+    message_card_class.cbClsExtra = 0;
+    message_card_class.cbWndExtra = 0;
+    message_card_class.hInstance = instance;
+    message_card_class.hIcon = (HICON)0;
+    message_card_class.hCursor = LoadCursorW(
+        (HINSTANCE)0, (LPCWSTR)(unsigned long long)IDC_ARROW
+    );
+    message_card_class.hbrBackground = app_background_brush ? app_background_brush :
+        (HBRUSH)(unsigned long long)(COLOR_WINDOW + 1);
+    message_card_class.lpszMenuName = (LPCWSTR)0;
+    message_card_class.lpszClassName = L"MessageCardMVP";
+    RegisterClassW(&message_card_class);
 
     preview_class.style = 0;
     preview_class.lpfnWndProc = image_preview_proc;
